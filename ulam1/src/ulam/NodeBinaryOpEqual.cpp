@@ -34,14 +34,12 @@ namespace MFM {
     assert(m_nodeLeft && m_nodeRight);
 
     UTI leftType = m_nodeLeft->checkAndLabelType();
-    //leftType = m_state.getUlamTypeAsDeref(leftType);
     UTI rightType = m_nodeRight->checkAndLabelType();
-    //rightType = m_state.getUlamTypeAsDeref(rightType);
 
     if(!m_state.isComplete(leftType) || !m_state.isComplete(rightType))
       {
-    	setNodeType(Nav);
-    	return Nav; //not quietly
+    	setNodeType(Hzy);
+    	return Hzy; //not quietly
       }
 
     if(!checkStoreIntoAble())
@@ -80,8 +78,6 @@ namespace MFM {
     if(UlamType::compare(newType, rightType, m_state) != UTIC_SAME)
       {
 	//different msg if try to assign non-class to a class type
-	//if(m_state.getUlamTypeByIndex(leftType)->getUlamTypeEnum() == Class)
-	//if((m_state.getUlamTypeByIndex(leftType)->getUlamTypeEnum() == Class) && !m_state.isReference(leftType))
 	if((m_state.getUlamTypeByIndex(leftType)->getUlamTypeEnum() == Class) && (m_state.getUlamTypeByIndex(rightType)->getUlamTypeEnum() != Class))
 	  {
 	    std::ostringstream msg;
@@ -109,18 +105,22 @@ namespace MFM {
 		msg << m_state.getUlamTypeNameBriefByIndex(newType).c_str();
 		msg << " for operator" << getName();
 		if(rscr == CAST_BAD)
-		  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		  {
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		    newType = Nav; //error
+		  }
 		else
-		  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		newType = Nav; //error
+		  {
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		    newType = Hzy;
+		  }
 	      }
 	    else if(!Node::makeCastingNode(m_nodeRight, newType, m_nodeRight))
 	      newType = Nav; //error
 	  }
       }
-
     setNodeType(newType);
-    setStoreIntoAble((newType != Nav)); //ok true
+    setStoreIntoAble((newType != Nav) && (newType != Hzy)); //ok true
     return newType;
   } //checkAndLabelType
 
@@ -187,6 +187,9 @@ namespace MFM {
     if(nuti == Nav)
       return ERROR;
 
+    if(nuti == Hzy)
+      return NOTREADY;
+
     evalNodeProlog(0); //new current frame pointer on node eval stack
 
     makeRoomForSlots(1); //always 1 slot for ptr
@@ -221,6 +224,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     evalNodeProlog(0);
 
@@ -268,6 +274,9 @@ namespace MFM {
     if(ruv.getUlamValueTypeIdx() == Nav || nuti == Nav)
       return false;
 
+    if(ruv.getUlamValueTypeIdx() == Hzy || nuti == Hzy)
+      return false;
+
     m_state.assignValue(pluv,ruv);
 
     //also copy result UV to stack, -1 relative to current frame pointer
@@ -292,6 +301,9 @@ namespace MFM {
     if((luv.getUlamValueTypeIdx() == Nav) || (ruv.getUlamValueTypeIdx() == Nav))
       return false;
 
+    if((luv.getUlamValueTypeIdx() == Hzy) || (ruv.getUlamValueTypeIdx() == Hzy))
+      return false;
+
     UlamValue rtnUV;
     u32 wordsize = m_state.getTotalWordSize(nuti);
     if(wordsize == MAXBITSPERINT)
@@ -310,6 +322,9 @@ namespace MFM {
       assert(0); //e.g. 0
 
     if(rtnUV.getUlamValueTypeIdx() == Nav)
+      return false;
+
+    if(rtnUV.getUlamValueTypeIdx() == Hzy)
       return false;
 
     m_state.assignValue(pluv,rtnUV);
@@ -377,6 +392,9 @@ namespace MFM {
       } //forloop
 
     if(rtnUV.getUlamValueTypeIdx() == Nav)
+      return false;
+
+    if(rtnUV.getUlamValueTypeIdx() == Hzy)
       return false;
 
     if(WritePacked(packRtn))

@@ -35,6 +35,9 @@ namespace MFM {
 
   UTI NodeUnaryOpBang::calcNodeType(UTI uti)
   {
+    if(!m_state.isComplete(uti))
+      return Hzy;
+
     ULAMTYPE typEnum = m_state.getUlamTypeByIndex(uti)->getUlamTypeEnum();
     if(typEnum == Bits)
       {
@@ -59,7 +62,10 @@ namespace MFM {
 	msg << m_state.getUlamTypeNameBriefByIndex(uti).c_str();
 	msg << " to Bool";
 	if(scr == CAST_HAZY)
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    newType = Hzy;
+	  }
 	else
 	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
       }

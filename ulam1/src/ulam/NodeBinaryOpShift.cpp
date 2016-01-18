@@ -14,15 +14,13 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     UTI leftType = m_nodeLeft->checkAndLabelType();
-    //leftType = m_state.getUlamTypeAsDeref(leftType);
     UTI rightType = m_nodeRight->checkAndLabelType();
-    //rightType = m_state.getUlamTypeAsDeref(rightType);
     UTI newType = calcNodeType(leftType, rightType); //Bits, or Nav error
 
     setNodeType(newType);
     setStoreIntoAble(false);
 
-    if(newType != Nav && m_state.isComplete(newType))
+    if(m_state.isComplete(newType))
       {
 	if(UlamType::compare(leftType, newType, m_state) != UTIC_SAME)
 	  {
@@ -43,7 +41,7 @@ namespace MFM {
 	  }
       } //complete
 
-    if(newType != Nav && isAConstant() && m_nodeLeft->isReadyConstant() && m_nodeRight->isReadyConstant())
+    if((newType != Nav) && isAConstant() && m_nodeLeft->isReadyConstant() && m_nodeRight->isReadyConstant())
       return constantFold();
 
     return newType;
@@ -80,7 +78,7 @@ namespace MFM {
   UTI NodeBinaryOpShift::calcNodeType(UTI lt, UTI rt)
   {
     if(!m_state.isComplete(lt) || !m_state.isComplete(rt))
-      return Nav;
+      return Hzy;
 
     //no atoms, elements, nor void as either operand
     if(!NodeBinaryOp::checkForPrimitiveTypes(lt, rt))
@@ -109,10 +107,15 @@ namespace MFM {
 	    if(lbs > 0)
 	      msg << "(" << lbs << ")";
 	    if(lscr == CAST_HAZY)
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		newType = Hzy;
+	      }
 	    else
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    bok = false; //Nav;
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		bok = false; //Nav;
+	      }
 	  }
 
 	// RHS of shift must be Unsigned, or positive constant.
@@ -126,10 +129,15 @@ namespace MFM {
 	    msg << m_state.getUlamTypeNameBriefByIndex(rt).c_str();
 	    msg << " to Unsigned";
 	    if(rscr == CAST_HAZY)
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		newType = Hzy;
+	      }
 	    else
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    bok = false; //Nav;
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		bok = false; //Nav;
+	      }
 	  }
 
 	//check for big shift values
@@ -143,7 +151,6 @@ namespace MFM {
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WARN);
 	      }
 	  }
-
 	if(!bok)
 	  newType = Nav;
       } //both scalars

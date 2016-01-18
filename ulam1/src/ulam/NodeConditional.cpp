@@ -62,8 +62,10 @@ namespace MFM {
     UTI myut = getNodeType();
     UTI ruti = getRightType();
     char id[255];
-    if(myut == Nav)
+    if((myut == Nav) || (myut == Nouti))
       sprintf(id,"%s<NOTYPE>\n",prettyNodeName().c_str());
+    else if(myut == Hzy)
+      sprintf(id,"%s<HAZYTYPE>\n",prettyNodeName().c_str());
     else
       sprintf(id,"%s<%s>\n",prettyNodeName().c_str(), m_state.getUlamTypeNameByIndex(myut).c_str());
     fp->write(id);

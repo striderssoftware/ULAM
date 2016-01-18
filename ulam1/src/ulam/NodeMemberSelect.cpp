@@ -70,14 +70,14 @@ namespace MFM {
 	msg << ", check and label fails this time around";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 
-	setNodeType(Nav);
+	setNodeType(Hzy);
 	m_state.setGoAgain(); //since no error msg
 	return getNodeType();
       } //done
 
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
     ULAMCLASSTYPE classtype = lut->getUlamClass();
-    if(classtype == UC_NOTACLASS && lut->getUlamTypeEnum() != Holder)
+    if((classtype == UC_NOTACLASS) && (lut->getUlamTypeEnum() != Holder))
       {
 	// must be a 'Class' type, either quark or element
 	// doesn't complete checkandlabel for rhs (e.g. funccall is NULL, no eval)
@@ -87,7 +87,6 @@ namespace MFM {
 	if(lut->getUlamTypeEnum() == UAtom)
 	  msg << "; suggest using a Conditional-As";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-
 	setNodeType(Nav);
 	return Nav;
       } //done
@@ -131,6 +130,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     evalNodeProlog(0); //new current frame pointer on node eval stack
 
@@ -190,7 +192,10 @@ namespace MFM {
 	rtnUV = UlamValue::makePtr(rslot, EVALRETURN, ruti, UNPACKED, m_state);
       }
 
-    if(rtnUV.getUlamValueTypeIdx() == Nav || ruti == Nav)
+    if((rtnUV.getUlamValueTypeIdx() == Nav) || (ruti == Nav))
+      return false;
+
+    if((rtnUV.getUlamValueTypeIdx() == Hzy) || (ruti == Hzy))
       return false;
 
     //copy result UV to stack, -1 relative to current frame pointer
@@ -203,6 +208,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     evalNodeProlog(0);
 

@@ -45,22 +45,22 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     u32 errorCount = 0;
+    u32 hazyCount = 0;
     UTI newType = Nav; //init
     UTI idxuti = Nav;
 
     UTI leftType = m_nodeLeft->checkAndLabelType();
-    //leftType = m_state.getUlamTypeAsDeref(leftType);
     bool isCustomArray = false;
 
     //for example, f.chance[i] where i is local, same as f.func(i);
     NodeBlock * currBlock = m_state.getCurrentBlock();
     m_state.pushCurrentBlockAndDontUseMemberBlock(currBlock); //currblock doesn't change
     UTI rightType = m_nodeRight->checkAndLabelType();
-    //rightType = m_state.getUlamTypeAsDeref(rightType);
 
     m_state.popClassContext();
 
-    if(leftType != Nav)
+    //if((leftType != Nav) && (leftType != Hzy))
+    if(m_state.isComplete(leftType))
       {
 	UlamType * lut = m_state.getUlamTypeByIndex(leftType);
 	isCustomArray = m_state.isClassACustomArray(leftType);
@@ -73,7 +73,7 @@ namespace MFM {
 		msg << "Incomplete Type: " << m_state.getUlamTypeNameBriefByIndex(leftType).c_str();
 		msg << " used with " << getName();
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		errorCount++;
+		hazyCount++;
 	      }
 	    else if(!isCustomArray)
 	      {
@@ -102,18 +102,25 @@ namespace MFM {
 		    msg << m_state.getUlamTypeNameBriefByIndex(leftType).c_str();
 		    msg << getName();
 		    if(lut->isComplete())
-		      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		      {
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+			newType = Nav; //error!
+			errorCount++;
+		      }
 		    else
+		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		    newType = Nav; //error!
-		    errorCount++;
+			newType = Hzy;
+			hazyCount++;
+		      }
 		  }
 	      }
 	  }
 
 	//set up idxuti..RHS
 	//cant proceed with custom array subscript if lhs is incomplete
-	if(errorCount == 0)
+	//if(errorCount == 0)
+	if((errorCount == 0) && (hazyCount == 0))
 	  {
 	    if(isCustomArray)
 	      {
@@ -127,11 +134,17 @@ namespace MFM {
 		    msg << m_state.getUlamTypeNameBriefByIndex(rightType).c_str();
 		    msg << "; and cannot be called";
 		    if(hasHazyArgs)
-		      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		      {
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+			idxuti = Hzy;
+			hazyCount++;
+		      }
 		    else
-		      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-		    idxuti = Nav; //error!
-		    errorCount++;
+		      {
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+			idxuti = Nav; //error!
+			errorCount++;
+		      }
 		  }
 		else if(camatches > 1)
 		  {
@@ -141,11 +154,17 @@ namespace MFM {
 		    msg << m_state.getUlamTypeNameBriefByIndex(rightType).c_str();
 		    msg << "; Explicit casting required";
 		    if(hasHazyArgs)
-		      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		      {
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+			idxuti = Hzy;
+			hazyCount++;
+		      }
 		    else
-		      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-		    idxuti = Nav; //error!
-		    errorCount++;
+		      {
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+			idxuti = Nav; //error!
+			errorCount++;
+		      }
 		  }
 	      }
 	    else
@@ -153,7 +172,7 @@ namespace MFM {
 		//not custom array
 		//must be some kind of numeric type: Int, Unsigned, or Unary..of any bit size
 		UlamType * rut = m_state.getUlamTypeByIndex(rightType);
-		if(rightType != Nav && !rut->isNumericType())
+		if((rightType != Nav) && (rightType != Hzy) && !rut->isNumericType())
 		  {
 		    std::ostringstream msg;
 		    msg << "Array item specifier requires numeric type: ";
@@ -169,7 +188,7 @@ namespace MFM {
 	      }
 	  } //errorcount is zero
 
-	if(idxuti != Nav && UlamType::compare(idxuti, rightType, m_state) == UTIC_NOTSAME)
+	if((idxuti != Nav) && (idxuti != Hzy) && UlamType::compare(idxuti, rightType, m_state) == UTIC_NOTSAME)
 	  {
 	    if(m_nodeRight->safeToCastTo(idxuti) == CAST_CLEAR)
 	      {
@@ -185,9 +204,18 @@ namespace MFM {
 		errorCount++;
 	      }
 	  }
-      } //lt not nav
+      } //lt not nav, might be Hzy
+    else
+      {
+	if(leftType == Nav)
+	  errorCount++;
+	else if(leftType == Hzy)
+	  hazyCount++;
+	else
+	  hazyCount++;
+      }
 
-    if(errorCount == 0)
+    if((errorCount == 0) && (hazyCount == 0))
       {
 	// sq bracket purpose in life is to account for array elements;
 	if(isCustomArray)
@@ -199,8 +227,15 @@ namespace MFM {
 	setStoreIntoAble(m_nodeLeft->isStoreIntoAble());
       }
     else
-      m_state.setGoAgain(); //covers non-error(debug) messages for incompletes
-
+      {
+	if(errorCount != 0)
+	  newType = Nav;
+	else if(hazyCount != 0)
+	  newType = Hzy;
+	else
+	  assert(0);
+	m_state.setGoAgain(); //covers non-error(debug) messages for incompletes
+      }
     setNodeType(newType);
     return newType;
   } //checkAndLabelType
@@ -223,6 +258,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     evalNodeProlog(0); //new current frame pointer
 
@@ -302,6 +340,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     evalNodeProlog(0); //new current frame pointer
 
@@ -475,7 +516,7 @@ namespace MFM {
     // since square brackets determine the constant size for this type, else error
     s32 newarraysize = NONARRAYSIZE;
     UTI sizetype = m_nodeRight->checkAndLabelType();
-    if(sizetype == Nav)
+    if((sizetype == Nav) || (sizetype == Hzy))
       {
 	rtnArraySize = UNKNOWNSIZE;
 	return true;

@@ -14,12 +14,10 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     UTI leftType = m_nodeLeft->checkAndLabelType();
-    //    leftType = m_state.getUlamTypeAsDeref(leftType);
     UTI rightType = m_nodeRight->checkAndLabelType();
-    //rightType = m_state.getUlamTypeAsDeref(rightType);
 
     UTI newType = calcNodeType(leftType, rightType); //for casting
-    if(newType != Nav && m_state.isComplete(newType))
+    if(m_state.isComplete(newType))
       {
 	u32 errCnt = 0;
 	if(UlamType::compare(rightType, newType, m_state) != UTIC_SAME)
@@ -43,7 +41,7 @@ namespace MFM {
     setStoreIntoAble(false);
 
     //still may need casting (e.g. unary compared to an int) before constantfolding
-    if(newType != Nav && isAConstant() && m_nodeLeft->isReadyConstant() && m_nodeRight->isReadyConstant())
+    if((newType != Nav) && isAConstant() && m_nodeLeft->isReadyConstant() && m_nodeRight->isReadyConstant())
       return NodeBinaryOp::constantFold();
 
     return newType;
@@ -53,7 +51,7 @@ namespace MFM {
   UTI NodeBinaryOpCompare::calcNodeType(UTI lt, UTI rt)
   {
     if(!m_state.isComplete(lt) || !m_state.isComplete(rt))
-      return Nav;
+      return Hzy;
 
     //no atoms, elements nor void as either operand
     if(!NodeBinaryOp::checkForPrimitiveTypes(lt, rt))
@@ -158,6 +156,9 @@ namespace MFM {
     UlamValue luv = m_state.m_nodeEvalStack.loadUlamValueFromSlot(lslot); //immediate value
     UlamValue ruv = m_state.m_nodeEvalStack.loadUlamValueFromSlot(rslot); //immediate value
     if((luv.getUlamValueTypeIdx() == Nav) || (ruv.getUlamValueTypeIdx() == Nav))
+      return false;
+
+    if((luv.getUlamValueTypeIdx() == Hzy) || (ruv.getUlamValueTypeIdx() == Hzy))
       return false;
 
     UlamValue rtnUV;

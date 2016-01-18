@@ -30,7 +30,7 @@ namespace MFM {
     //because the result bitsize for mod should be the right bitsize
     // create a cast! combining newType's base type and right resultbitsize.
     // could be the same, or "unsafe".
-    if(newType != Nav && m_state.isComplete(newType))
+    if((newType != Nav) && (newType != Hzy) && m_state.isComplete(newType))
       {
 	UlamType * newut = m_state.getUlamTypeByIndex(newType);
 	ULAMTYPE typEnum = newut->getUlamTypeEnum();
@@ -90,6 +90,7 @@ namespace MFM {
     if(rdata == 0)
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Division By Zero Attempt in Modulus", ERR);
+	rtnUV.setUlamValueTypeIdx(Nav);
 	return rtnUV;
       }
 
@@ -123,6 +124,7 @@ namespace MFM {
     if(rdata == 0)
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Division By Zero Attempt in Modulus", ERR);
+	rtnUV.setUlamValueTypeIdx(Nav);
 	return rtnUV;
       }
 
@@ -154,6 +156,7 @@ namespace MFM {
     if(rdata == 0)
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Remainder By Zero Attempt", ERR);
+	refUV.setUlamValueTypeIdx(Nav);
 	return;
       }
 

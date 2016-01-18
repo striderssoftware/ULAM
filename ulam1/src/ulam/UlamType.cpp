@@ -96,7 +96,7 @@ namespace MFM {
 	msg << "Casting UNKNOWN sizes; " << getBitSize();
 	msg << ", Value Type and size was: " << typidx << "," << m_state.getBitSize(typidx);
 	MSG(m_state.getFullLocationAsString(m_state.m_locOfNextLineText).c_str(), msg.str().c_str(), DEBUG);
-	return CAST_HAZY;  //includes Navs
+	return CAST_HAZY;  //includes Navs & Hzy's
       }
 
     //let packable arrays of same size pass...
@@ -653,9 +653,13 @@ namespace MFM {
 
   ULAMTYPECOMPARERESULTS UlamType::compare(UTI u1, UTI u2, CompilerState& state)  //static
   {
+    assert((u1 != Nouti) && (u2 != Nouti));
+
     if(u1 == u2) return UTIC_SAME; //short-circuit
 
-    if(u1 == Nav || u2 == Nav) return UTIC_NOTSAME;
+    if((u1 == Nav) || (u2 == Nav)) return UTIC_NOTSAME;
+
+    if((u1 == Hzy) || (u2 == Hzy)) return UTIC_DONTKNOW;
 
     UlamType * ut1 = state.getUlamTypeByIndex(u1);
     UlamType * ut2 = state.getUlamTypeByIndex(u2);
@@ -697,9 +701,13 @@ namespace MFM {
 
   ULAMTYPECOMPARERESULTS UlamType::compareWithWildArrayItemReferenceType(UTI u1, UTI u2, CompilerState& state)  //static
   {
+    assert((u1 != Nouti) && (u2 != Nouti));
+
     if(u1 == u2) return UTIC_SAME; //short-circuit
 
-    if(u1 == Nav || u2 == Nav) return UTIC_NOTSAME;
+    if((u1 == Nav) || (u2 == Nav)) return UTIC_NOTSAME;
+
+    if((u1 == Hzy) || (u2 == Hzy)) return UTIC_DONTKNOW;
 
     UlamType * ut1 = state.getUlamTypeByIndex(u1);
     UlamType * ut2 = state.getUlamTypeByIndex(u2);

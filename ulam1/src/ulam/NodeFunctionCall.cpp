@@ -94,6 +94,7 @@ namespace MFM {
     std::vector<Node *> argNodes;
     u32 constantArgs = 0;
     u32 navArgs = 0;
+    u32 hzyArgs = 0;
     UTI listuti = Nav;
     bool hazyKin = false;
 
@@ -110,6 +111,8 @@ namespace MFM {
 	    argNodes.push_back(m_argumentNodes->getNodePtr(i));
 	    if(argtype == Nav)
 	      navArgs++;
+	    if(argtype == Hzy)
+	      hzyArgs++;
 	    // track constants and potential casting to be handled
 	    if(m_argumentNodes->isAConstant(i))
 	      constantArgs++;
@@ -121,6 +124,13 @@ namespace MFM {
 	    argNodes.clear();
 	    setNodeType(Nav);
 	    return Nav; //short circuit
+	  }
+
+	if(hzyArgs)
+	  {
+	    argNodes.clear();
+	    setNodeType(Hzy);
+	    return Hzy; //short circuit
 	  }
 
 	// still need to pinpoint the SymbolFunction for m_funcSymbol!
@@ -297,10 +307,16 @@ namespace MFM {
 
     // late, important to do, but not too soon;
     // o.w. NodeIdents can't find their blocks.
-    if(listuti == Nav || numErrorsFound > 0)
+    if((listuti == Nav) || (numErrorsFound > 0))
       {
-	setNodeType(Nav); //happens when the arg list has incomplete types.
+	setNodeType(Nav); //happens when the arg list has erroneous types.
 	it = Nav;
+      }
+
+    if(listuti == Hzy)
+      {
+	setNodeType(Hzy); //happens when the arg list has incomplete types.
+	it = Hzy;
       }
 
     argNodes.clear();
@@ -348,6 +364,9 @@ namespace MFM {
     UTI nuti = getNodeType();
     if(nuti == Nav)
       return ERROR;
+
+    if(nuti == Hzy)
+      return NOTREADY;
 
     assert(m_funcSymbol);
     NodeBlockFunctionDefinition * func = m_funcSymbol->getFunctionNode();
@@ -780,6 +799,7 @@ namespace MFM {
     else if(cos->getAutoLocalType() == ALT_AS)
       {
 	fp->write(m_state.getAutoHiddenContextArgName());
+	fp->write(cos->getMangledName().c_str()); //auto's name
 	fp->write(".GetEffectiveSelf()->getVTableEntry(");
       }
     else
@@ -833,7 +853,7 @@ namespace MFM {
       {
 	cos = m_state.m_currentObjSymbolsForCodeGen.back(); //"owner" of func
 	cosuti = cos->getUlamTypeIdx();
-	if(!m_state.isClassASubclass(cosuti))
+	if(m_state.isClassASubclass(cosuti) == Nouti) //not a subclass
 	  cosBlockNo = cos->getBlockNoOfST(); //compare owner and self
 	else
 	  stgcosBlockNo = cos->getBlockNoOfST();
@@ -848,10 +868,10 @@ namespace MFM {
 	    startcos = subcosidx + 1; //for loop later
 
 	    UTI cosclassuti = Node::findTypeOfAncestorAndBlockNo(cosBlockNo, subcosidx);
-	    assert(cosclassuti != Nav);
+	    assert(cosclassuti != Nouti); //has ancestor
 	    UlamType * cosclassut = m_state.getUlamTypeByIndex(cosclassuti);
 
-	    if((cosuti != Nav) && cosut->isReference())
+	    if((cosuti != Nouti) && cosut->isReference())
 	      {
 		UTI cosclassrefuti = m_state.getUlamTypeAsRef(cosclassuti, cosut->getReferenceType());
 		UlamType * cosclassrefut = m_state.getUlamTypeByIndex(cosclassrefuti);
@@ -872,7 +892,7 @@ namespace MFM {
 		  }
 	      }
 	  }
-	else if(m_state.isClassASubclass(stgcosuti)) //self is subclass
+	else if(m_state.isClassASubclass(stgcosuti) != Nouti) //self is subclass
 	  {
 	    Node * foundnode = m_state.findNodeNoInAClass(cosBlockNo, stgcosuti);
 	    assert(foundnode);
@@ -1031,6 +1051,7 @@ namespace MFM {
 	      {
 		hiddenargs << m_state.getAutoHiddenContextArgName(); //_ucaut
 		stgcos = m_state.m_currentObjSymbolsForCodeGen[0];
+		hiddenargs << stgcos->getMangledName().c_str(); //auto's name
 	      }
 	    else
 	      {
@@ -1313,7 +1334,7 @@ namespace MFM {
 	    startcos = subcosidx + 1; //for loop later
 
 	    UTI cosclassuti = Node::findTypeOfAncestorAndBlockNo(cosBlockNo, subcosidx);
-	    assert(cosclassuti != Nav);
+	    assert(cosclassuti != Nouti); //has ancestor
 	    stgcosuti = cosclassuti; // resets stgcosuti here!!
 	    stgcosut = m_state.getUlamTypeByIndex(stgcosuti);
 	    useSuperClassName = true;
