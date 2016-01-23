@@ -57,6 +57,7 @@ namespace MFM {
 	return Hzy; //short-circuit
       }
 
+    assert(m_state.okUTItoContinue(luti));
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
     ULAMCLASSTYPE lclasstype = lut->getUlamClass();
     if(!((lut->getUlamTypeEnum() == UAtom || lclasstype == UC_ELEMENT) && lut->isScalar()))
@@ -69,6 +70,7 @@ namespace MFM {
 	  {
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	    newType = Hzy;
+	    m_state.setGoAgain();
 	  }
 	else
 	  {
@@ -97,7 +99,7 @@ namespace MFM {
 
     assert(m_nodeTypeDesc);
     UTI ruti = m_nodeTypeDesc->checkAndLabelType();
-    if((ruti != Nav) && (ruti != Hzy))
+    if(m_state.okUTItoContinue(ruti))
       {
 	UlamType * rut = m_state.getUlamTypeByIndex(ruti);
 	ULAMCLASSTYPE rclasstype = rut->getUlamClass();
@@ -111,6 +113,7 @@ namespace MFM {
 	      {
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //goagain set
 		newType = Hzy;
+		m_state.setGoAgain();
 	      }
 	    else
 	      {
@@ -164,6 +167,7 @@ namespace MFM {
     UTI luti = pluv.getUlamValueTypeIdx();
     assert(luti == Ptr);
     luti = pluv.getPtrTargetType();
+    assert(m_state.okUTItoContinue(luti));
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
 
     if((lut->getUlamTypeEnum() == UAtom))
@@ -176,6 +180,7 @@ namespace MFM {
 
     bool asit = false;
     UTI ruti = getRightType();
+    assert(m_state.okUTItoContinue(ruti));
     UlamType * rut = m_state.getUlamTypeByIndex(ruti);
     ULAMCLASSTYPE rclasstype = rut->getUlamClass();
     if(rclasstype == UC_QUARK)
@@ -251,6 +256,7 @@ namespace MFM {
     UTI luti = luvpass.getUlamValueTypeIdx();
     assert(luti == Ptr);
     luti = luvpass.getPtrTargetType(); //replaces
+    assert(m_state.okUTItoContinue(luti));
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
 
     //wiped out by reading lhs; needed later by auto NodeVarDecl

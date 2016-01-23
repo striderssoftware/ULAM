@@ -84,7 +84,7 @@ namespace MFM {
 
   std::string SymbolClassName::formatAnInstancesArgValuesAsAString(UTI instance)
   {
-    assert(instance == getUlamTypeIdx());
+    assert((instance == getUlamTypeIdx()) || (m_state.isARefTypeOfUlamType(instance, getUlamTypeIdx()) == UTIC_SAME)); //or could be a reference
     return "10"; //zero args
   }
 
@@ -103,13 +103,14 @@ namespace MFM {
 
     m_state.pushClassContext(getUlamTypeIdx(), classNode, classNode, false, NULL);
 
-    UTI superclass = getSuperClassForClassInstance(getUlamTypeIdx());
-    if(superclass == Nouti)
+    UTI superuti = getSuperClassForClassInstance(getUlamTypeIdx());
+    if(superuti == Nouti)
       classNode->updateLineage(0);
-    else
+    //else if(!m_state.isClassAStub(superuti) && (superuti != Hzy))
+    else if((superuti != Hzy))
       {
 	//for inheritance, get the node no of superblock
-	u32 sid = m_state.getUlamKeyTypeSignatureByIndex(superclass).getUlamKeyTypeSignatureNameId();
+	u32 sid = m_state.getUlamKeyTypeSignatureByIndex(superuti).getUlamKeyTypeSignatureNameId();
 	SymbolClassName * cnsym = NULL;
 	AssertBool isDefined = m_state.alreadyDefinedSymbolClassName(sid, cnsym);
 	assert(isDefined);
@@ -118,7 +119,6 @@ namespace MFM {
 
 	classNode->updateLineage(superblock->getNodeNo());
       }
-
     m_state.popClassContext(); //restore
   } //updateLineageOfClass
 
@@ -198,25 +198,50 @@ namespace MFM {
     checkAndLabelClassFirst();
   } //checkAndLabelClassInstances
 
-  u32 SymbolClassName::countNavNodesInClassInstances()
+  void SymbolClassName::countNavNodesInClassInstances(u32& ncnt, u32& hcnt, u32& nocnt)
   {
     assert(!isClassTemplate());
-    u32 navCounter = 0;
+    u32 navCounter = ncnt;
+    u32 hzyCounter = hcnt;
+    u32 unsetCounter = nocnt;
+
     NodeBlockClass * classNode = getClassBlockNode();
     assert(classNode);
     m_state.pushClassContext(getUlamTypeIdx(), classNode, classNode, false, NULL);
 
-    classNode->countNavNodes(navCounter);
-    if(navCounter > 0)
+    classNode->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+    if((ncnt - navCounter) > 0)
       {
 	std::ostringstream msg;
-	msg << navCounter << " data member nodes with unresolved types remain in class '";
+	msg << navCounter << " data member nodes with erroneous types remain in class '";
 	msg << m_state.getUlamTypeNameBriefByIndex(getUlamTypeIdx()).c_str();
 	msg << "'";
-	MSG(classNode->getNodeLocationAsString().c_str(), msg.str().c_str(), WARN);
+	MSG(classNode->getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
       }
+
+    if((hcnt - hzyCounter) > 0)
+      {
+	std::ostringstream msg;
+	msg << hzyCounter << " data member nodes with unresolved types remain in class '";
+	msg << m_state.getUlamTypeNameBriefByIndex(getUlamTypeIdx()).c_str();
+	msg << "'";
+	MSG(classNode->getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
+      }
+
+    if((nocnt - unsetCounter) > 0)
+      {
+	std::ostringstream msg;
+	msg << unsetCounter << " data member nodes with unset types remain in class '";
+	msg << m_state.getUlamTypeNameBriefByIndex(getUlamTypeIdx()).c_str();
+	msg << "'";
+	MSG(classNode->getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
+      }
+
+    SymbolClass::countNavNodesInClassResolver(ncnt, hcnt, nocnt);
+
     m_state.popClassContext(); //restore
-    return navCounter;
+
+    return;
   } //countNavNodesInClassInstances
 
   bool SymbolClassName::setBitSizeOfClassInstances()

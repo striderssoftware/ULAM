@@ -38,7 +38,7 @@ NodeBinaryOpArithDivide::NodeBinaryOpArithDivide(const NodeBinaryOpArithDivide& 
     // create a cast! combining newType's base type and left resultbitsize.
     // could be the same, or "unsafe".
     //if((newType != Nav) && (newType != Hzy) && m_state.isComplete(newType))
-    if(m_state.isComplete(newType))
+    if(m_state.okUTItoContinue(newType) && m_state.isComplete(newType))
       {
 	UlamType * newut = m_state.getUlamTypeByIndex(newType);
 	ULAMTYPE typEnum = newut->getUlamTypeEnum();
@@ -92,6 +92,7 @@ NodeBinaryOpArithDivide::NodeBinaryOpArithDivide(const NodeBinaryOpArithDivide& 
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Divide By Zero Attempt", ERR);
 	rtnUV.setUlamValueTypeIdx(Nav);
+	setNodeType(Nav); //compiler counts
 	return rtnUV;
       }
 
@@ -126,6 +127,7 @@ NodeBinaryOpArithDivide::NodeBinaryOpArithDivide(const NodeBinaryOpArithDivide& 
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Divide By Zero Attempt", ERR);
 	rtnUV.setUlamValueTypeIdx(Nav);
+	setNodeType(Nav); //compiler counts
 	return rtnUV;
       }
 
@@ -158,6 +160,7 @@ NodeBinaryOpArithDivide::NodeBinaryOpArithDivide(const NodeBinaryOpArithDivide& 
       {
 	MSG(getNodeLocationAsString().c_str(), "Possible Divide By Zero Attempt", ERR);
 	refUV.setUlamValueTypeIdx(Nav);
+	setNodeType(Nav); //compiler counts
 	return;
       }
 

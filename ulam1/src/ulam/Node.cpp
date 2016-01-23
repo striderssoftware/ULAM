@@ -161,7 +161,7 @@ namespace MFM {
     return CAST_HAZY;
   } //safeToCastTo
 
-  bool Node::checkSafeToCastTo(UTI fromType, UTI newType)
+  bool Node::checkSafeToCastTo(UTI fromType, UTI& newType)
   {
     bool rtnOK = true;
     UlamType * tobe = m_state.getUlamTypeByIndex(newType);
@@ -179,9 +179,16 @@ namespace MFM {
 	msg << m_state.getUlamTypeNameBriefByIndex(newType).c_str();
 	msg << " for '" << getName() << "'";
 	if(scr == CAST_HAZY)
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    m_state.setGoAgain();
+	    newType = Hzy;
+	  }
 	else
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    newType = Nav;
+	  }
 	rtnOK = false;
       } //not safe
     return rtnOK;
@@ -201,18 +208,39 @@ namespace MFM {
     //for Nodes with Symbols
   }
 
-  void Node::countNavNodes(u32& cnt)
+  void Node::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
     if(getNodeType() == Nav)
       {
-	cnt += 1;
+	ncnt += 1;
 	std::ostringstream msg;
-	msg << "Unresolved No." << cnt;
-	msg << ": <" << getName() << ">";
-
-	//msg << " (" << prettyNodeName().c_str() << ") ";  //ugly!
-	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	msg << "Erroneous ";
+	msg << "'" << getName() << "'";
+	msg << " (#" << ncnt << ")";
+	//msg << " [" << prettyNodeName().c_str() << "] ";  //ugly!
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
       }
+    else if(getNodeType() == Hzy)
+      {
+	hcnt += 1;
+	std::ostringstream msg;
+	msg << "Unresolved ";
+	msg << "'" << getName() << "'";
+	msg << " (#" << hcnt << ")";
+	//msg << " [" << prettyNodeName().c_str() << "] ";  //ugly!
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
+      }
+    else if(getNodeType() == Nouti)
+      {
+	nocnt += 1;
+	std::ostringstream msg;
+	msg << "Untyped ";
+	msg << "'" << getName() << "'";
+	msg << " (#" << nocnt << ")";
+	//msg << " [" << prettyNodeName().c_str() << "] ";  //ugly!
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), INFO);
+      }
+
 #if 0
     //debugg only
     if(m_loc.getLineNo() == 0)
@@ -222,7 +250,7 @@ namespace MFM {
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
       }
 #endif
-  }
+  } //countNavHzyNoutiNodes
 
   UTI Node::constantFold()
   {
@@ -1558,7 +1586,7 @@ namespace MFM {
     UTI vuti = uvpass.getUlamValueTypeIdx();
     assert(vuti == Ptr); //terminals handled in NodeTerminal
     vuti = uvpass.getPtrTargetType();
-
+    assert(m_state.okUTItoContinue(vuti));
     UlamType * vut = m_state.getUlamTypeByIndex(vuti);
 
     // write out intermediate tmpVar, or immediate terminal, as temp BitVector arg
@@ -1601,6 +1629,7 @@ namespace MFM {
     UTI vuti = uvpass.getUlamValueTypeIdx();
     assert(vuti == Ptr);
     vuti = uvpass.getPtrTargetType();
+    assert(m_state.okUTItoContinue(vuti));
     UlamType * vut = m_state.getUlamTypeByIndex(vuti);
 
     assert(uvpass.getPtrStorage() == TMPBITVAL);
@@ -2404,7 +2433,7 @@ namespace MFM {
     //currently, only regular classes may have subclasses.
     if((cosBlockNo != caBlockNo) && (cosuti != caclassuti) && !m_state.isClassATemplate(caclassuti))
       {
-	assert(m_state.isClassASubclass(cosuti) != Nouti);
+	assert((m_state.isClassASubclass(cosuti) != Nouti) || (m_state.isARefTypeOfUlamType(cosuti, caclassuti) == UTIC_SAME));
 	UlamType * caclassut = m_state.getUlamTypeByIndex(caclassuti);
 
 	fp->write(caclassut->getUlamTypeMangledName().c_str());
@@ -2478,9 +2507,13 @@ namespace MFM {
 	  }
 	else
 	  {
+	    //use possible dereference type for mangled name
+	    UTI derefuti = m_state.getUlamTypeAsDeref(stgcosuti);
+	    UlamType * derefut = m_state.getUlamTypeByIndex(derefuti);
+
 	    //update uc to reflect "effective" self for this funccall
 	    fp->write("UlamContext<EC>(uc, &");
-	    fp->write(stgcosut->getUlamTypeMangledName().c_str());
+	    fp->write(derefut->getUlamTypeMangledName().c_str());
 	    fp->write("<EC");
 	    if(stgcosclasstype == UC_QUARK)
 	      {
@@ -2610,7 +2643,7 @@ namespace MFM {
 	fp->write("::");
 	fp->write("Us::"); //typedef
 	if(cosSize == 1)
-	  fp->write("THE_INSTANCE."); //only for elements???
+	  fp->write("THE_INSTANCE."); //only for elements, except w funccalls
       }
 
     for(u32 i = startcos; i < cosSize; i++)
@@ -2662,7 +2695,7 @@ namespace MFM {
     //currently, only regular classes may have subclasses.
     if((cosBlockNo != caBlockNo) && (cosuti != caclassuti) && !m_state.isClassATemplate(caclassuti))
       {
-	assert(m_state.isClassASubclass(cosuti) != Nouti);
+	assert((m_state.isClassASubclass(cosuti) != Nouti) || (m_state.isARefTypeOfUlamType(cosuti, caclassuti) == UTIC_SAME));
 	UlamType * caclassut = m_state.getUlamTypeByIndex(caclassuti);
 
 	fp->write(caclassut->getUlamTypeMangledName().c_str());

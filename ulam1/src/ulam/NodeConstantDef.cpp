@@ -130,6 +130,16 @@ namespace MFM {
     return m_cid;
   }
 
+  bool NodeConstantDef::getNodeTypeDescriptorPtr(NodeTypeDescriptor *& nodetypedescref)
+  {
+    if(m_nodeTypeDesc)
+      {
+	nodetypedescref = m_nodeTypeDesc;
+	return true;
+      }
+    return false;
+  }
+
   UTI NodeConstantDef::checkAndLabelType()
   {
     UTI it = Nav; //expression type
@@ -152,7 +162,7 @@ namespace MFM {
     if(m_nodeTypeDesc)
       {
 	UTI duti = m_nodeTypeDesc->checkAndLabelType(); //clobbers any expr it
-	if(duti != Nav && suti != duti)
+	if(m_state.okUTItoContinue(duti) && (suti != duti))
 	  {
 	    std::ostringstream msg;
 	    msg << "REPLACING Symbol UTI" << suti;
@@ -192,10 +202,10 @@ namespace MFM {
 	    msg << "Constant value expression for: ";
 	    msg << m_state.m_pool.getDataAsString(m_cid).c_str();
 	    msg << ", is invalid";
-	    if(m_nodeExpr->isAConstant() && m_nodeExpr->isReadyConstant())
+	    //	    if(m_nodeExpr->isAConstant() && m_nodeExpr->isReadyConstant())
 	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    else
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //possibly still hazy
+	      //else
+	      // MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //possibly still hazy
 	    setNodeType(Nav);
 	    return Nav; //short-circuit
 	  }
@@ -207,6 +217,7 @@ namespace MFM {
 	    msg << m_state.m_pool.getDataAsString(m_cid).c_str();
 	    msg << ", is not ready";
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //possibly still hazy
+	    m_state.setGoAgain();
 	    setNodeType(Hzy);
 	    return Hzy; //short-circuit
 	  }
@@ -223,6 +234,35 @@ namespace MFM {
 	msg << " UTI" << cuti;
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	//too soon! m_state.setGoAgain(); //might not have nodetypedesc
+
+	UTI mappedUTI = Nouti;
+	if(m_state.mappedIncompleteUTI(cuti, suti, mappedUTI))
+	  {
+	    std::ostringstream msg;
+	    msg << "Substituting Mapped UTI" << mappedUTI;
+	    msg << ", " << m_state.getUlamTypeNameBriefByIndex(mappedUTI).c_str();
+	    msg << " for incomplete list type: ";
+	    msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
+	    msg << "' UTI" << suti << " while labeling class: ";
+	    msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    m_state.mapTypesInCurrentClass(suti, mappedUTI); //before setting equal?
+	    m_constSymbol->resetUlamType(mappedUTI); //consistent!
+	    suti = mappedUTI;
+	  }
+
+	if(!m_state.isComplete(suti)) //reloads to recheck for debug message
+	  {
+	    std::ostringstream msg;
+	    msg << "Incomplete identifier for type: ";
+	    msg << m_state.getUlamTypeNameBriefByIndex(suti).c_str();
+	    msg << " used with symbol name '" << getName();
+	    msg << "' UTI" << suti << " while labeling class: ";
+	    msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    //suti = Hzy;
+	    //m_state.setGoAgain();
+	  }
       }
     else
       {
@@ -260,11 +300,21 @@ namespace MFM {
 
     if(!(m_constSymbol->isReady()))
       {
-	foldConstantExpression();
-	if(!(m_constSymbol->isReady() || m_constSymbol->hasDefault()))
+	UTI foldrtn = foldConstantExpression();
+	if(foldrtn == Nav)
+	  setNodeType(Nav);
+	else if(foldrtn == Hzy)
 	  {
 	    setNodeType(Hzy);
 	    m_state.setGoAgain();
+	  }
+	else
+	  {
+	    if(!(m_constSymbol->isReady() || m_constSymbol->hasDefault()))
+	      {
+		setNodeType(Hzy);
+		m_state.setGoAgain();
+	      }
 	  }
       }
     return getNodeType();
@@ -305,15 +355,15 @@ namespace MFM {
     m_state.popClassContext(); //restore
   } //checkForSymbols
 
-  void NodeConstantDef::countNavNodes(u32& cnt)
+  void NodeConstantDef::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    Node::countNavNodes(cnt);
+    Node::countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
     if(m_nodeExpr)
-      m_nodeExpr->countNavNodes(cnt);
+      m_nodeExpr->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
 
     if(m_nodeTypeDesc)
-      m_nodeTypeDesc->countNavNodes(cnt);
-  } //countNavNodes
+      m_nodeTypeDesc->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+  } //countNavHzyNoutiNodes
 
   NNO NodeConstantDef::getBlockNo()
   {
@@ -347,19 +397,22 @@ namespace MFM {
   // called during parsing rhs of named constant;
   // Requires a constant expression, else error;
   // (scope of eval is based on the block of const def.)
-  bool NodeConstantDef::foldConstantExpression()
+  UTI NodeConstantDef::foldConstantExpression()
   {
     UTI uti = getNodeType();
 
-    if((uti == Nav) || !m_state.isComplete(uti)) //not complete includes Hzy
-      return false; //e.g. not a constant
+    if(uti == Nav)
+      return Nav;
+
+    if(!m_state.isComplete(uti)) //not complete includes Hzy
+      return Hzy; //e.g. not a constant; total word size (below) requires completeness
 
     assert(m_constSymbol);
     if(m_constSymbol->isReady())
-      return true;
+      return uti;
 
     if(!m_nodeExpr)
-      return false;
+      return Nav;
 
     // if here, must be a constant..
     u64 newconst = 0; //UlamType format (not sign extended)
@@ -390,7 +443,7 @@ namespace MFM {
 	msg << "' is erronous while compiling class: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	return false;
+	return Nav;
       }
 
     if(evs == NOTREADY)
@@ -401,7 +454,7 @@ namespace MFM {
 	msg << "' is not yet ready while compiling class: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-	return false;
+	return Hzy;
       }
 
     //insure constant value fits in its declared type
@@ -409,17 +462,24 @@ namespace MFM {
     if(scr != CAST_CLEAR)
       {
 	std::ostringstream msg;
-	msg << "Constant value expression for (";
-	msg << getName() << " = " << m_nodeExpr->getName() << ") is not representable as ";
+	msg << "Constant value expression for '";
+	msg << getName() << "' is not representable as ";
 	msg<< m_state.getUlamTypeNameBriefByIndex(uti).c_str();
 	if(scr == CAST_BAD)
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	else
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-	return false; //necessary if not just a warning.
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    return Nav;
+	  }
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	return Hzy; //necessary if not just a warning.
       }
 
-    if(updateConstant(newconst))
+    UTI updateRtn = updateConstant(newconst);
+    if(updateRtn == Nav)
+      return Nav;
+    else if(updateRtn == Hzy)
+      return Hzy;
+    else
       {
 	NodeTerminal * newnode;
 	if(m_state.getUlamTypeByIndex(uti)->getUlamTypeEnum() == Int)
@@ -431,24 +491,22 @@ namespace MFM {
 	delete m_nodeExpr;
 	m_nodeExpr = newnode;
       }
-    else
-      return false;
 
     if(m_constSymbol->isParameter())
       m_constSymbol->setDefaultValue(newconst); //hasDefault (not isReady)!
     else
       m_constSymbol->setValue(newconst); //isReady now!
-    return true;
+    return uti; //ok
   } //foldConstantExpression
 
-  bool NodeConstantDef::updateConstant(u64 & newconst)
+  UTI NodeConstantDef::updateConstant(u64 & newconst)
   {
     if(!m_constSymbol)
-      return false;
+      return Nav;
 
     UTI nuti = getNodeType();
     if(!m_state.isComplete(nuti))
-      return false;
+      return Hzy;
 
     //store in UlamType format
     bool rtnb = true;
@@ -468,8 +526,9 @@ namespace MFM {
 	msg << "Constant Type Unknown: ";
 	msg <<  m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	return Nav;
       }
-    return rtnb;
+    return nuti;
   } //updateConstant
 
   bool NodeConstantDef::updateConstant32(u64 & newconst)

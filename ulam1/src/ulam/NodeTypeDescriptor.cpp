@@ -13,7 +13,6 @@ namespace MFM {
   NodeTypeDescriptor::NodeTypeDescriptor(Token tokarg, UTI auti, CompilerState & state, ALT refarg) : Node(state), m_typeTok(tokarg), m_uti(auti), m_ready(false), m_unknownBitsizeSubtree(NULL), m_refType(refarg)
   {
     setNodeLocation(m_typeTok.m_locator);
-    //m_uti = m_state.getUlamTypeAsRef(auti, refarg);
   }
 
   //since there's no assoc symbol, we map the m_uti here (e.g. S(x,y).sizeof nodeterminalproxy)
@@ -81,6 +80,11 @@ namespace MFM {
     return m_uti;
   }
 
+  void NodeTypeDescriptor::resetGivenUTI(UTI uti)
+  {
+    m_uti = uti;
+  }
+
   ALT NodeTypeDescriptor::getReferenceType()
   {
     return m_refType;
@@ -97,16 +101,18 @@ namespace MFM {
       return getNodeType();
 
     UTI it = givenUTI();
-    if(resolveType(it))
+    if(resolveType(it)) //ref
       {
 	setNodeType(it);
-	m_ready = true; // set here!!!
+	m_ready = true; //set here!!!
       }
-    else
+    else if(it == Hzy)
       {
 	setNodeType(Hzy);
 	m_state.setGoAgain();
       }
+    else
+      setNodeType(it);
 
     return getNodeType();
   } //checkAndLabelType
@@ -134,7 +140,13 @@ namespace MFM {
 	    UTI ciuti = nut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureClassInstanceIdx();
 	    UlamType * ciut = m_state.getUlamTypeByIndex(ciuti);
 	    if(ciut->isComplete())
-	      m_state.setUTISizes(nuti, ciut->getBitSize(), ciut->getArraySize());
+	      {
+		if(!m_state.setUTISizes(nuti, ciut->getBitSize(), ciut->getArraySize()))
+		  {
+		    rtnuti = Nav;
+		    return false;
+		  }
+	      }
 	  }
       }
 
@@ -173,13 +185,68 @@ namespace MFM {
 
     UlamType * nut = m_state.getUlamTypeByIndex(nuti);
     ULAMTYPE etype = nut->getUlamTypeEnum();
-    if(etype == Class)
+
+    if((etype == Class))
       {
+	ULAMCLASSTYPE nclasstype = nut->getUlamClass();
 	if(nut->isComplete())
 	  {
 	    rtnuti = nuti;
 	    rtnb = true;
 	  } //else we're not ready!!
+	else if(nclasstype == UC_UNSEEN)
+	  {
+	    UTI tduti = Nouti;
+	    UTI tmpforscalaruti = Nouti;
+	    bool isTypedef = m_state.getUlamTypeByTypedefName(m_typeTok.m_dataindex, tduti, tmpforscalaruti);
+
+	    if(isTypedef)
+	      {
+		std::ostringstream msg;
+		if(m_state.isComplete(tmpforscalaruti))
+		  {
+		    //wait until complete..
+		    UlamType * tut = m_state.getUlamTypeByIndex(tmpforscalaruti);
+		    UlamKeyTypeSignature tdkey = tut->getUlamKeyTypeSignature();
+		    UlamKeyTypeSignature newkey(tdkey.getUlamKeyTypeSignatureNameId(), tut->getBitSize(), tut->getArraySize(), 0, tut->getReferenceType());
+		    m_state.makeUlamTypeFromHolder(newkey, tut->getUlamTypeEnum(), nuti);
+		    //unseen typedef appear like Class basetype, until seen
+		    //resetGivenUTI(tmpforscalaruti); //update for next time around
+		    //m_state.mapTypesInCurrentClass(nuti, tmpforscalaruti);
+		    //((UlamTypeClass *) nut)->setUlamClass(tut->getUlamClass());
+		    rtnuti = tmpforscalaruti; //reset
+		    rtnb = true;
+		    msg << "RESET ";
+		  }
+		else
+		  {
+		    rtnuti = Hzy;
+		    //((UlamTypeClass *) nut)->setUlamClass(UC_JUNK);
+		  }
+		msg << "Unseen Class was a typedef for: ";
+		msg << m_state.getUlamTypeNameBriefByIndex(tduti).c_str();
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+
+	      }
+	    else
+	      {
+		bool isAnonymousClass = (nut->isHolder() || !m_state.isARootUTI(nuti));
+
+		std::ostringstream msg;
+		msg << "UNSEEN Class and incomplete descriptor for type: ";
+		msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
+		if(isAnonymousClass)
+		  {
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		    rtnuti = Hzy;
+		  }
+		else
+		  {
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		    rtnuti = Nav;
+		  }
+	      }
+	  }
 	else
 	  rtnuti = Hzy;
       }
@@ -188,8 +255,9 @@ namespace MFM {
 	//primitive, or array typedef
 	if(!m_unknownBitsizeSubtree)
 	  {
-	    if(nuti == Nav)
+	    if(nuti == Nouti || nuti == Nav) //was Nav?
 	      {
+		assert(0); //i don't understand
 	      //use default primitive bitsize
 	      rtnuti = m_state.makeUlamType(m_typeTok, ULAMTYPE_DEFAULTBITSIZE[etype], NONARRAYSIZE, Nouti);
 	      rtnb = true;
@@ -222,7 +290,7 @@ namespace MFM {
       {
 	s32 bs = UNKNOWNSIZE;
 	//primitive with possible unknown bit sizes.
-	bool rtnb = m_unknownBitsizeSubtree->getTypeBitSizeInParen(bs, etype); //eval
+	bool rtnb = m_unknownBitsizeSubtree->getTypeBitSizeInParen(bs, etype, auti); //eval
 	if(rtnb)
 	  {
 	    if(bs < 0)
@@ -237,16 +305,30 @@ namespace MFM {
 	      }
 
 	    // keep m_unknownBitsizeSubtree in case of template (don't delete)
-	    m_state.setUTISizes(auti, bs, ut->getArraySize()); //update UlamType, outputs errors
+	    if(!m_state.setUTISizes(rtnuti, bs, ut->getArraySize())) //update UlamType, outputs errs
+	      {
+		rtnuti = Nav;
+		return false;
+	      }
+	  }
+	else
+	  {
+	    rtnuti = auti; //could be Hzy or Nav
+	    return false;
 	  }
       }
-    assert(auti == rtnuti);
-    return (m_state.isComplete(auti)); //repeat if bitsize is still unknown
+
+    bool rtnb = m_state.isComplete(rtnuti);  //repeat if bitsize is still unknown
+    if(!rtnb)
+      rtnuti = Hzy;
+    return rtnb;
   } //resolveTypeBitsize
 
-  void NodeTypeDescriptor::countNavNodes(u32& cnt)
+  void NodeTypeDescriptor::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    Node::countNavNodes(cnt);
+    Node::countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+    if(m_unknownBitsizeSubtree)
+      m_unknownBitsizeSubtree->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
   }
 
   bool NodeTypeDescriptor::assignClassArgValueInStubCopy()

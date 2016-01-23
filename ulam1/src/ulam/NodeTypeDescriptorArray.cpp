@@ -79,6 +79,21 @@ namespace MFM {
     m_unknownArraysizeSubtree = ceForArraySize;
   } //linkConstantExpressionArraysize
 
+  void NodeTypeDescriptorArray::resetGivenUTI(UTI uti)
+  {
+    UTI newuti = uti;
+    UlamType * ut = m_state.getUlamTypeByIndex(uti);
+    if(ut->isScalar())
+      {
+	//create corresponding array type
+	UlamType * nut = m_state.getUlamTypeByIndex(givenUTI());
+	UlamKeyTypeSignature key = ut->getUlamKeyTypeSignature();
+	UlamKeyTypeSignature newkey(key.getUlamKeyTypeSignatureNameId(),nut->getBitSize(), nut->getArraySize(), uti, nut->getReferenceType());
+	newuti = m_state.makeUlamType(newkey, ut->getUlamTypeEnum());
+      }
+    NodeTypeDescriptor::resetGivenUTI(newuti);
+  } //resetGivenUTI
+
   UTI NodeTypeDescriptorArray::checkAndLabelType()
   {
     UTI it = getNodeType();
@@ -99,7 +114,7 @@ namespace MFM {
 	    std::ostringstream msg;
 	    msg << "Invalid non-scalar type: ";
 	    msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
-	    msg << ". Requires a custom array";
+	    msg << ". Requires a custom array"; //we have unpacked arrays now!
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //was ERR
 	    //it = Nav;
 	  }
@@ -111,10 +126,10 @@ namespace MFM {
       }
     else
       {
-	setNodeType(it); //now that we have Hzy
-	m_state.setGoAgain();
+	setNodeType(it); //now that we have Hzy; could be Nav
+	if(it == Hzy)
+	  m_state.setGoAgain();
       }
-
     return getNodeType();
   } //checkAndLabelType
 
@@ -169,9 +184,8 @@ namespace MFM {
 	      }
 	  }
 
-	// of course, their keys' nameids should be the same (~ enum)!!
-	// unless one is a "holder"
-	assert((m_state.getUlamTypeByIndex(nuti)->getUlamTypeEnum() == m_state.getUlamTypeByIndex(scuti)->getUlamTypeEnum()) || m_state.isHolder(nuti));
+	checkAndMatchBaseUlamTypes(nuti, scuti);
+	nuti = givenUTI(); //reload
 
 	if(resolveTypeArraysize(nuti, scuti))
 	  {
@@ -179,32 +193,42 @@ namespace MFM {
 	    rtnuti = nuti;
 	  }
 	else
-	  rtnuti = Hzy;
+	  rtnuti = nuti; //could be Nav or Hzy
       } //else select not ready, so neither are we!!
     else
       rtnuti = Hzy;
     return rtnb;
   } //resolveType
 
-  bool NodeTypeDescriptorArray::resolveTypeArraysize(UTI auti, UTI scuti)
+  bool NodeTypeDescriptorArray::resolveTypeArraysize(UTI& rtnuti, UTI scuti)
   {
     assert(m_unknownArraysizeSubtree);
     s32 as = UNKNOWNSIZE;
 
+    UTI auti = Nouti;
     //array of primitives or classes
-    bool rtnb = m_unknownArraysizeSubtree->getArraysizeInBracket(as); //eval
-    if(rtnb && as != UNKNOWNSIZE)
+    bool rtnb = m_unknownArraysizeSubtree->getArraysizeInBracket(as, auti); //eval
+    if(!rtnb)
+      {
+	rtnuti = Nav;
+	return false; //error, e.g. possible divide by zero
+      }
+    else if(as != UNKNOWNSIZE)
       {
 	// keep in case a template
 	//delete m_unknownArraysizeSubtree;
-	m_state.setUTISizes(auti, m_state.getBitSize(scuti), as); //update UlamType
+	if(!m_state.setUTISizes(rtnuti, m_state.getBitSize(scuti), as)) //update UlamType
+	  {
+	    rtnuti = Nav;
+	    return false;
+	  }
       }
 
-    attemptToResolveHolderArrayType(auti, scuti);
+    attemptToResolveHolderArrayType(rtnuti, scuti);
 
-    checkAndMatchClassTypes(auti, scuti);
+    checkAndMatchClassTypes(rtnuti, scuti);
 
-    return (m_state.isComplete(auti)); //repeat if holder or bitsize is still unknown
+    return (m_state.isComplete(rtnuti)); //repeat if holder or bitsize is still unknown
   } //resolveTypeArraysize
 
   bool NodeTypeDescriptorArray::attemptToResolveHolderArrayType(UTI auti, UTI buti)
@@ -242,6 +266,7 @@ namespace MFM {
   void NodeTypeDescriptorArray::checkAndMatchClassTypes(UTI auti, UTI scuti)
   {
     //update class types to match, if necessary
+    //e.g. t3436 (unpacked array of elements), t3621 (array of inherited quarks)
     UlamType * aut = m_state.getUlamTypeByIndex(auti);
     if(aut->getUlamTypeEnum() == Class)
       {
@@ -256,16 +281,39 @@ namespace MFM {
 	    msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
 	    msg << " (UTI" << auti << ") set to match its scalar type ";
 	    msg << m_state.getUlamTypeNameBriefByIndex(scuti).c_str();
-	    msg << " (UTI" << auti << ")";
+	    msg << " (UTI" << scuti << ")";
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	  }
       }
   } //checkAndMatchClassTypes
 
-  void NodeTypeDescriptorArray::countNavNodes(u32& cnt)
+  void NodeTypeDescriptorArray::checkAndMatchBaseUlamTypes(UTI auti, UTI scuti)
   {
-    Node::countNavNodes(cnt);
-    m_nodeScalar->countNavNodes(cnt);
-  }
+    // of course, their keys' nameids should be the same (~ enum)!!
+    // unless one is a "holder"
+    // e.g. t3595 (typedef Unseen wasn't a class at all)
+    if((m_state.getUlamTypeByIndex(auti)->getUlamTypeEnum() != m_state.getUlamTypeByIndex(scuti)->getUlamTypeEnum()) && !m_state.isHolder(auti))
+      {
+	resetGivenUTI(scuti);
+	std::ostringstream msg;
+	msg << "Type of array descriptor: ";
+	msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
+	msg << " (UTI" << auti << ") set to match its scalar type ";
+	msg << m_state.getUlamTypeNameBriefByIndex(scuti).c_str();
+	msg << " (UTI" << scuti << ")";
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	auti = givenUTI();
+      }
+  } //checkAndMatchBaseUlamTypes
+
+  void NodeTypeDescriptorArray::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
+  {
+    NodeTypeDescriptor::countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+    if(m_nodeScalar)
+      m_nodeScalar->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+
+    if(m_unknownArraysizeSubtree)
+      m_unknownArraysizeSubtree->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+  } //countNavHzyNoutiNodes
 
 } //end MFM

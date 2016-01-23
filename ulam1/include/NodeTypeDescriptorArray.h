@@ -66,9 +66,11 @@ namespace MFM{
 
     void linkConstantExpressionArraysize(NodeSquareBracket * ceForArraySize);
 
+    virtual void resetGivenUTI(UTI uti);
+
     virtual UTI checkAndLabelType();
 
-    virtual void countNavNodes(u32& cnt);
+    virtual void countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt);
 
   private:
     NodeTypeDescriptor * m_nodeScalar;
@@ -76,9 +78,10 @@ namespace MFM{
 
     virtual bool resolveType(UTI& rtnuti);
 
-    bool resolveTypeArraysize(UTI auti, UTI scuti);
+    bool resolveTypeArraysize(UTI& rtnuti, UTI scuti);
     bool attemptToResolveHolderArrayType(UTI auti, UTI buti);
     void checkAndMatchClassTypes(UTI auti, UTI scuti);
+    void checkAndMatchBaseUlamTypes(UTI auti, UTI scuti);
   };
 
 } //MFM

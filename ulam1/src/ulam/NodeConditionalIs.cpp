@@ -54,6 +54,7 @@ namespace MFM {
 	  {
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	    newType = Hzy;
+	    m_state.setGoAgain();
 	  }
 	else
 	  {
@@ -64,7 +65,7 @@ namespace MFM {
 
     assert(m_nodeTypeDesc);
     UTI ruti = m_nodeTypeDesc->checkAndLabelType();
-    if((ruti != Nav) && (ruti != Hzy))
+    if(m_state.okUTItoContinue(ruti))
       {
 	UlamType * rut = m_state.getUlamTypeByIndex(ruti);
 	//rhs is allowed to be a quark due to inheritance.
@@ -79,6 +80,7 @@ namespace MFM {
 	      {
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //goagain set
 		newType = Hzy;
+		m_state.setGoAgain();
 	      }
 	    else
 	      {

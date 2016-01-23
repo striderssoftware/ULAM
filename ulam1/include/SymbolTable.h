@@ -1,8 +1,8 @@
 /**                                        -*- mode:C++ -*-
  * SymbolTable.h -  Basic handling of Table of Symbols for ULAM
  *
- * Copyright (C) 2014-2015 The Regents of the University of New Mexico.
- * Copyright (C) 2014-2015 Ackleyshack LLC.
+ * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
+ * Copyright (C) 2014-2016 Ackleyshack LLC.
  *
  * This file is part of the ULAM programming language compilation system.
  *
@@ -29,7 +29,7 @@
   \file SymbolTable.h -  Basic handling of Table of Symbols for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
-  \date (C) 2014-2015 All rights reserved.
+  \date (C) 2014-2016 All rights reserved.
   \gpl
 */
 
@@ -73,6 +73,7 @@ namespace MFM{
 
     u32 getTableSize();
 
+    u32 getNumberOfConstantSymbolsInTable(bool argsOnly);
 
     //Table of Variable Data Members:
 
@@ -115,7 +116,7 @@ namespace MFM{
 
     void labelTableOfFunctions();
 
-    u32 countNavNodesAcrossTableOfFunctions();
+    void countNavNodesAcrossTableOfFunctions(u32& ncnt, u32& hcnt, u32& nocnt);
 
     bool checkCustomArrayTypeFuncs();
 
@@ -167,7 +168,7 @@ namespace MFM{
 
     bool labelTableOfClasses();
 
-    u32 countNavNodesAcrossTableOfClasses();
+    void countNavNodesAcrossTableOfClasses(u32& navcount, u32& hzycount, u32& unsetcount);
 
     bool setBitSizeOfTableOfClasses();
 
@@ -193,6 +194,7 @@ namespace MFM{
     s32 calcVariableSymbolTypeSize(UTI ut);
     bool variableSymbolWithCountableSize(Symbol * sym);
 
+    bool isAnonymousClass(UTI cuti);
   };
 
 }

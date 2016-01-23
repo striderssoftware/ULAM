@@ -2,8 +2,8 @@
 /**                                        -*- mode:C++ -*-
  * CompilerState.h - Global Compiler State for ULAM
  *
- * Copyright (C) 2014-2015 The Regents of the University of New Mexico.
- * Copyright (C) 2014-2015 Ackleyshack LLC.
+ * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
+ * Copyright (C) 2014-2016 Ackleyshack LLC.
  *
  * This file is part of the ULAM programming language compilation system.
  *
@@ -30,7 +30,7 @@
   \file CompilerState.h - Global Compiler State for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
-  \date (C) 2014-2015 All rights reserved.
+  \date (C) 2014-2016 All rights reserved.
   \gpl
 */
 
@@ -203,8 +203,8 @@ namespace MFM{
     bool isReference(UTI utArg);
     bool isComplete(UTI utArg);
     bool isHolder(UTI utArg);
-    void setBitSize(UTI utArg, s32 total);
-    void setUTISizes(UTI utArg, s32 bitsize, s32 arraysize);
+    bool setBitSize(UTI utArg, s32 total);
+    bool setUTISizes(UTI utArg, s32 bitsize, s32 arraysize);
     void mergeClassUTI(UTI olduti, UTI cuti);
     void rekeyToReferenceUTI(ALT autoreftype, UTI auti);
     bool isARootUTI(UTI auti);
@@ -212,7 +212,7 @@ namespace MFM{
     void updateUTIAlias(UTI auti, UTI buti);
     void initUTIAlias(UTI auti);
 
-    void setSizesOfNonClass(UTI utArg, s32 bitsize, s32 arraysize);
+    bool setSizesOfNonClass(UTI utArg, s32 bitsize, s32 arraysize);
 
     s32 getDefaultBitSize(UTI uti);
     u32 getTotalBitSize(UTI utArg);
@@ -233,6 +233,7 @@ namespace MFM{
 	search SymbolTables LIFO order; o.w. return false
     */
     bool alreadyDefinedSymbol(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
+    bool isDataMemberIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isFuncIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isFuncIdInClassScopeNNO(NNO cnno, u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
@@ -255,7 +256,8 @@ namespace MFM{
 
     /** creates temporary class type for dataindex, returns the new Symbol pointer in 2nd arg; */
     bool addIncompleteClassSymbolToProgramTable(Token cTok, SymbolClassName * & symptr);
-    bool addIncompleteClassSymbolToProgramTable(Token cTok, SymbolClassNameTemplate * & symptr);
+    bool addIncompleteTemplateClassSymbolToProgramTable(Token cTok, SymbolClassNameTemplate * & symptr);
+    UTI addStubCopyToAncestorClassTemplate(UTI stubTypeToCopy,  UTI context);
 
     void resetUnseenClass(SymbolClassName * cnsym, Token identTok);
     bool getUnseenClassFilenames(std::vector<std::string>& unseenFiles);
@@ -410,6 +412,7 @@ namespace MFM{
     UTI getBigBitsUTI();
 
     bool isPtr(UTI puti);
+    bool okUTItoContinue(UTI uti);
 
   private:
     ClassContextStack m_classContextStack; // the current subject of this compilation

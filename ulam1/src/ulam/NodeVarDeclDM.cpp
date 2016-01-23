@@ -158,6 +158,12 @@ namespace MFM {
     //don't allow a subclass to shadow a superclass datamember
     UTI cuti = m_state.getCompileThisIdx();
     UTI superuti = m_state.isClassASubclass(cuti);
+    if(superuti == Hzy)
+      {
+	setNodeType(Hzy);
+	m_state.setGoAgain();
+	return Hzy;
+      }
     if(superuti != Nouti) //has ancestor
       {
 	//is a subclass' DM..
@@ -246,10 +252,10 @@ namespace MFM {
     return getNodeType();
   } //checkAndLabelType
 
-  void NodeVarDeclDM::countNavNodes(u32& cnt)
+  void NodeVarDeclDM::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    NodeVarDecl::countNavNodes(cnt);
-  } //countNavNodes
+    NodeVarDecl::countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+  } //countNavHzyNoutiNodes
 
   void NodeVarDeclDM::setInitExpr(Node * node)
   {

@@ -57,6 +57,7 @@ namespace MFM{
 
     u32 getTotalParameterSlots();
     SymbolConstantValue * getParameterSymbolPtr(u32 n);
+    SymbolConstantValue * findParameterSymbolByNameId(u32 pnid);
 
     virtual bool isClassTemplate();
     bool isClassTemplate(UTI cuti);
@@ -76,10 +77,10 @@ namespace MFM{
     SymbolClass * makeAStubClassInstanceHolder(Token typeTok, UTI suti);
     void copyAStubClassInstance(UTI instance, UTI newuti, UTI context);
 
+    void mergeClassInstancesFromTEMP();
+
     /** replaces temporary class argument names, updates the ST, and the class type */
     void fixAnyClassInstances();
-
-    //    virtual bool statusUnknownConstantExpressionsInClassInstances();
 
     bool statusNonreadyClassArgumentsInStubClassInstances();
     bool constantFoldClassArgumentsInAStubClassInstance(UTI instance);
@@ -103,7 +104,7 @@ namespace MFM{
     virtual void checkAbstractInstanceErrorsForClassInstances();
 
     virtual void checkAndLabelClassInstances();
-    virtual u32 countNavNodesInClassInstances();
+    virtual void countNavNodesInClassInstances(u32& ncnt, u32& hcnt, u32& nocnt);
     virtual bool setBitSizeOfClassInstances();
     virtual void printBitSizeOfClassInstances();
     virtual void packBitsForClassInstances();
@@ -131,7 +132,7 @@ namespace MFM{
     std::map<std::string, SymbolClass* > m_scalarClassArgStringsToSymbolPtr; //merged set
     std::map<UTI, std::map<UTI,UTI> > m_mapOfTemplateUTIToInstanceUTIPerClassInstance;
 
-    void mergeClassInstancesFromTEMP();
+    bool checkTemplateAncestorBeforeAStubInstantiation(SymbolClass * stubcsym);
     bool takeAnInstancesArgValues(SymbolClass * fm, SymbolClass * to);
     bool copyAnInstancesArgValues(SymbolClass * fm, SymbolClass * to);
     void cloneAnInstancesUTImap(SymbolClass * fm, SymbolClass * to);

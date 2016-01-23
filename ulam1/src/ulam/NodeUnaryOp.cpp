@@ -153,7 +153,7 @@ namespace MFM {
     return newType;
   } //checkAndLabelType
 
-  bool NodeUnaryOp::checkSafeToCastTo(UTI newType)
+  bool NodeUnaryOp::checkSafeToCastTo(UTI& newType)
   {
     bool rtnOK = true;
     FORECAST scr = m_node->safeToCastTo(newType);
@@ -170,9 +170,16 @@ namespace MFM {
 	msg << m_state.getUlamTypeNameBriefByIndex(newType).c_str();
 	msg << " for unary operator" << getName();
 	if(scr == CAST_HAZY)
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    m_state.setGoAgain();
+	    newType = Hzy;
+	  }
 	else
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    newType = Nav;
+	  }
 	rtnOK = false;
       } //not safe
     return rtnOK;
@@ -181,6 +188,7 @@ namespace MFM {
   s32 NodeUnaryOp::resultBitsize(UTI uti)
   {
     s32 newbs = m_state.getBitSize(uti);
+    assert(m_state.okUTItoContinue(uti));
     ULAMCLASSTYPE ct = m_state.getUlamTypeByIndex(uti)->getUlamClass();
 
     if(ct == UC_QUARK)
@@ -237,10 +245,10 @@ namespace MFM {
     return rtnOK;
   } //checkForNumericType
 
-  void NodeUnaryOp::countNavNodes(u32& cnt)
+  void NodeUnaryOp::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    Node::countNavNodes(cnt); //missing
-    m_node->countNavNodes(cnt); //no need to count self?
+    Node::countNavHzyNoutiNodes(ncnt, hcnt, nocnt); //missing
+    m_node->countNavHzyNoutiNodes(ncnt, hcnt, nocnt); //no need to count self?
   }
 
   UTI NodeUnaryOp::constantFold()
@@ -305,6 +313,7 @@ namespace MFM {
 	msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	setNodeType(Hzy);
+	m_state.setGoAgain(); //for compiler counts
 	return Hzy;
       }
 

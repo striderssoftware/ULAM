@@ -70,7 +70,7 @@ namespace MFM {
 	msg << " trying to update now";
 	MSG("", msg.str().c_str(), DEBUG);
 
-	constantFoldNonreadyClassArgs();
+	rtnstat = constantFoldNonreadyClassArgs(); //forgot to update rtnstat?
       }
     return rtnstat;
   } //statusNonreadyClassArguments
@@ -94,7 +94,7 @@ namespace MFM {
 	if(ceNode)
 	  {
 	    UTI uti = ceNode->checkAndLabelType();
-	    if((uti != Nav) && (uti != Hzy)) //i.e. ready
+	    if(m_state.okUTItoContinue(uti)) //i.e. ready
 	      {
 		delete ceNode;
 		*vit = NULL;
@@ -105,7 +105,7 @@ namespace MFM {
 	vit++;
       } //while thru vector of incomplete args only
 
-    m_state.m_pendingArgStubContext = Nav; //clear flag
+    m_state.m_pendingArgStubContext = Nouti; //clear flag
     m_state.popClassContext(); //restore previous context
 
     //clean up, replace vector with vector of those still unresolved
@@ -241,6 +241,23 @@ namespace MFM {
       }
     return rtnB;
   } //findNodeNoInNonreadyClassArgs
+
+  void Resolver::countNavNodes(u32& ncnt, u32& hcnt, u32& nocnt)
+  {
+    countNavNodesInPendingArgs(ncnt, hcnt, nocnt);
+  }
+
+  void Resolver::countNavNodesInPendingArgs(u32& ncnt, u32& hcnt, u32& nocnt)
+  {
+    std::vector<NodeConstantDef *>::const_iterator vit = m_nonreadyClassArgSubtrees.begin();
+    while(vit != m_nonreadyClassArgSubtrees.end())
+      {
+	NodeConstantDef * ceNode = *vit;
+	assert(ceNode);
+	ceNode->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+	vit++;
+      }
+  } //countNavNodesInPendingArgs
 
   void Resolver::cloneUTImap(SymbolClass * csym)
   {

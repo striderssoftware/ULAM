@@ -13,7 +13,7 @@ namespace MFM {
   {
     UTI nodeType = NodeBinaryOp::checkAndLabelType(); //dup Bitwise calcNodeType
 
-    if((nodeType != Nav) && (nodeType != Hzy))
+    if(m_state.okUTItoContinue(nodeType))
       {
 	if(!NodeBinaryOpEqual::checkStoreIntoAble())
 	  {
@@ -74,6 +74,7 @@ namespace MFM {
 	    else //hazy
 	      {
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		m_state.setGoAgain(); //for compiler counts
 		newType = Hzy;
 	      }
 	  }

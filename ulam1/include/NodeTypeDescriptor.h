@@ -72,13 +72,15 @@ namespace MFM{
 
     UTI givenUTI();
 
+    virtual void resetGivenUTI(UTI uti);
+
     ALT getReferenceType();
 
     void setReferenceType(ALT refarg);
 
     virtual UTI checkAndLabelType();
 
-    virtual void countNavNodes(u32& cnt);
+    virtual void countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt);
 
     virtual bool assignClassArgValueInStubCopy();
 

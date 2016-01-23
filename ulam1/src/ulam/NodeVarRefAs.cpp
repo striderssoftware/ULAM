@@ -70,10 +70,10 @@ namespace MFM {
     return NodeVarRef::calcMaxDepth(depth, maxdepth, base);
   } //calcaMaxDepth
 
-  void NodeVarRefAs::countNavNodes(u32& cnt)
+  void NodeVarRefAs::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    NodeVarRef::countNavNodes(cnt);
-  } //countNavNodes
+    NodeVarRef::countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+  } //countNavHzyNoutiNodes
 
   EvalStatus NodeVarRefAs::eval()
   {
@@ -93,6 +93,7 @@ namespace MFM {
     ((SymbolVariableStack *) m_varSymbol)->setAutoPtrForEval(pluv); //for future ident eval uses
 
     UTI luti = pluv.getPtrTargetType();
+    assert(m_state.okUTItoContinue(luti));
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
     ULAMCLASSTYPE lclasstype = lut->getUlamClass();
     UTI autostgtype = m_state.m_currentAutoStorageType;

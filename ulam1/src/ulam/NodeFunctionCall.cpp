@@ -83,6 +83,7 @@ namespace MFM {
   {
     UTI it = Nav;  // init return type
     u32 numErrorsFound = 0;
+    u32 numHazyFound = 0;
 
     //might be related to m_currentSelfPtr?
     //member selection doesn't apply to arguments
@@ -130,6 +131,7 @@ namespace MFM {
 	  {
 	    argNodes.clear();
 	    setNodeType(Hzy);
+	    m_state.setGoAgain(); //for compier counts
 	    return Hzy; //short circuit
 	  }
 
@@ -153,10 +155,15 @@ namespace MFM {
 	      }
 	    msg << "and cannot be called";
 	    if(hasHazyArgs)
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		numHazyFound++;
+	      }
 	    else
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    numErrorsFound++;
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		numErrorsFound++;
+	      }
 	  }
 	else if(numFuncs > 1)
 	  {
@@ -174,15 +181,20 @@ namespace MFM {
 	      }
 	    msg << "explicit casting is required";
 	    if(hasHazyArgs)
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+		numHazyFound++;
+	      }
 	    else
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    numErrorsFound++;
+	      {
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		numErrorsFound++;
+	      }
 	  }
 	else //==1
 	  {
 	    if(hasHazyArgs)
-	      numErrorsFound++; //wait to cast
+	      numHazyFound++; //wait to cast
 
 	    //check ref types and func calls here..care with variable args (2 pass)
 	    u32 numParams = funcSymbol->getNumberOfParameters();
@@ -210,10 +222,26 @@ namespace MFM {
 	msg << "(2) <" << m_state.getTokenDataAsString(&m_functionNameTok).c_str();
 	msg << "> is not a defined function, or cannot be safely called in this context";
 	if(hazyKin)
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
+	    numHazyFound++;
+	  }
 	else
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	numErrorsFound++;
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    numErrorsFound++;
+	  }
+      }
+
+    if(funcSymbol && m_funcSymbol != funcSymbol)
+      {
+	m_funcSymbol = funcSymbol;
+
+	std::ostringstream msg;
+	msg << "Substituting <" << funcSymbol->getMangledNameWithTypes().c_str() << "> ";
+	if(m_funcSymbol)
+	    msg << "for <" << m_funcSymbol->getMangledNameWithTypes().c_str() <<">";
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
       }
 
     if(m_funcSymbol && m_funcSymbol != funcSymbol)
@@ -228,7 +256,7 @@ namespace MFM {
 	  }
       }
 
-    if(numErrorsFound == 0)
+    if((numErrorsFound == 0) && (numHazyFound == 0))
       {
 	if(m_funcSymbol == NULL)
 	  m_funcSymbol = funcSymbol;
@@ -313,21 +341,23 @@ namespace MFM {
 	it = Nav;
       }
 
-    if(listuti == Hzy)
+    if((listuti == Hzy) || (numHazyFound > 0))
       {
 	setNodeType(Hzy); //happens when the arg list has incomplete types.
+	m_state.setGoAgain(); //for compier counts
 	it = Hzy;
       }
 
     argNodes.clear();
+    assert(m_funcSymbol || (getNodeType() == Nav) || (getNodeType() == Hzy));
     return it;
   } //checkAndLabelType
 
-  void NodeFunctionCall::countNavNodes(u32& cnt)
+  void NodeFunctionCall::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {
-    Node::countNavNodes(cnt); //missing
-    m_argumentNodes->countNavNodes(cnt);
-  } //countNavNodes
+    Node::countNavHzyNoutiNodes(ncnt, hcnt, nocnt); //missing
+    m_argumentNodes->countNavHzyNoutiNodes(ncnt, hcnt, nocnt);
+  } //countNavHzyNoutiNodes
 
   void NodeFunctionCall::calcMaxDepth(u32& depth, u32& maxdepth, s32 base)
   {
@@ -696,7 +726,7 @@ namespace MFM {
     if(nuti != Void)
       {
 	u32 pos = 0; //POS 0 rightjustified;
-	if(nut->getUlamClass() == UC_NOTACLASS) //atom too???
+	if(nut->getUlamClass() == UC_NOTACLASS) //includes atom too
 	  {
 	    u32 wordsize = nut->getTotalWordSize();
 	    pos = wordsize - nut->getTotalBitSize();
@@ -751,6 +781,7 @@ namespace MFM {
 
   void NodeFunctionCall::genCodeVirtualFunctionCall(File * fp, UlamValue & uvpass)
   {
+    assert(m_funcSymbol);
     //requires runtime lookup for virtual function pointer
     u32 vfidx = m_funcSymbol->getVirtualMethodIdx();
 
@@ -805,7 +836,13 @@ namespace MFM {
     else
       {
 	//unless local or dm, known at compile time!
-	fp->write(cosut->getUlamTypeMangledName().c_str());
+	if(cosut->getReferenceType() == ALT_REF)
+	  {
+	    UTI derefcos = m_state.getUlamTypeAsDeref(cosuti);
+	    fp->write(m_state.getUlamTypeByIndex(derefcos)->getUlamTypeMangledName().c_str());
+	  }
+	else
+	  fp->write(cosut->getUlamTypeMangledName().c_str());
 	if(cosut->getUlamClass() == UC_ELEMENT)
 	  fp->write("<EC>::");
 	else
@@ -844,6 +881,7 @@ namespace MFM {
     UlamType * stgcosut = m_state.getUlamTypeByIndex(stgcosuti);
 
     // use NodeNo for inheritance
+    assert(m_funcSymbol);
     NNO cosBlockNo = m_funcSymbol->getBlockNoOfST();
     NNO stgcosBlockNo = stgcos->getBlockNoOfST(); //m_state.getAClassBlockNo(stgcosuti);
 
@@ -1055,9 +1093,13 @@ namespace MFM {
 	      }
 	    else
 	      {
+		//use possible dereference type for mangled name
+		UTI cosderefuti = m_state.getUlamTypeAsDeref(cosuti);
+		UlamType * cosderefut = m_state.getUlamTypeByIndex(cosderefuti);
+
 		//update uc to reflect "effective" self for this funccall
 		hiddenargs << "UlamContext<EC>(uc, &";
-		hiddenargs << cosut->getUlamTypeMangledName().c_str();
+		hiddenargs << cosderefut->getUlamTypeMangledName().c_str();
 		hiddenargs << "<EC";
 		if(cosut->getUlamClass() == UC_QUARK)
 		  {
@@ -1165,6 +1207,7 @@ namespace MFM {
     //wiped out by arg processing; needed to determine owner of called function
     std::vector<Symbol *> saveCOSVector = m_state.m_currentObjSymbolsForCodeGen;
 
+    assert(m_funcSymbol);
     u32 numParams = m_funcSymbol->getNumberOfParameters();
     // handle any variable number of args separately
     // since non-datamember variables can modify globals, save/restore before/after each
@@ -1246,6 +1289,7 @@ namespace MFM {
     UTI cosuti = cos->getUlamTypeIdx();
     UlamType * cosut = m_state.getUlamTypeByIndex(cosuti);
 
+    assert(m_funcSymbol);
     UTI vuti = m_funcSymbol->getParameterType(n);
     UlamType * vut = m_state.getUlamTypeByIndex(vuti);
     ULAMCLASSTYPE vclasstype = vut->getUlamClass();
@@ -1324,6 +1368,7 @@ namespace MFM {
 
     // use NodeNo for inheritance
     bool useSuperClassName = false;
+    assert(m_funcSymbol);
     NNO cosBlockNo = m_funcSymbol->getBlockNoOfST();
     NNO stgcosBlockNo = m_state.getAClassBlockNo(stgcosuti);
     if(stgcosBlockNo != cosBlockNo)

@@ -163,6 +163,17 @@ namespace MFM {
 
   UTI CompilerState::makeUlamTypeFromHolder(UlamKeyTypeSignature oldkey, UlamKeyTypeSignature newkey, ULAMTYPE utype, UTI uti)
   {
+    //trans-basic type from Class to Non-class
+    if((getUlamTypeByIndex(uti)->getUlamTypeEnum() == Class) && (utype != Class))
+      {
+	//we need to also remove the name id from program ST
+	u32 oldnameid = oldkey.getUlamKeyTypeSignatureNameId();
+	Symbol * tmpsym = NULL;
+	AssertBool isGone = m_programDefST.removeFromTable(oldnameid, tmpsym);
+	assert(isGone);
+	delete tmpsym;
+      }
+
     //we need to keep the uti, but change the key
     //removes old key and its ulamtype from map, if no longer pointed to
     deleteUlamKeyTypeSignature(oldkey, uti);
@@ -607,6 +618,12 @@ namespace MFM {
 	msg << ", for incomplete class " << getUlamTypeNameBriefByIndex(cnsymOfIncomplete->getUlamTypeIdx()).c_str();
 	msg << "(UTI" << cnsymOfIncomplete->getUlamTypeIdx() << ")";
 	MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), DEBUG);
+
+	if(getCompileThisId() != skey.getUlamKeyTypeSignatureNameId())
+	  {
+	    //e.g. inheritance
+	    ((SymbolClassNameTemplate *)cnsymOfIncomplete)->mergeClassInstancesFromTEMP(); //not mid-iteration!! makes alreadydefined.
+	  }
       }
       //updateUTIAlias(suti, newuti);
     return newuti;
@@ -726,7 +743,8 @@ namespace MFM {
 	    if(alreadyDefinedSymbolClassName(args.m_typeTok.m_dataindex, cnsym))
 	      {
 		uti = cnsym->getUlamTypeIdx();  //beware: may not match class parameters!!!
-	      } //else  or make one if doesn't exist yet, while parsing --- do we do this anymore ???
+	      }
+	    //else make one if doesn't exist yet, while parsing --- do we do this anymore ???
 	  }
       }
     else
@@ -817,8 +835,6 @@ namespace MFM {
     u32 arraysize = keyOfArg.getUlamKeyTypeSignatureArraySize();
     UTI classidx = keyOfArg.getUlamKeyTypeSignatureClassInstanceIdx();
     u32 nameid = keyOfArg.m_typeNameId;
-    //    if(classidx != Nav)
-    //  classidx = utArg; //use instance, rather than template in reference key
     UlamKeyTypeSignature baseKey(nameid, bitsize, arraysize, classidx, altArg);  //default array size is zero
 
     UTI buti = makeUlamType(baseKey, bUT); //could be a new one, oops.
@@ -846,7 +862,7 @@ namespace MFM {
 
   bool CompilerState::getDefaultQuark(UTI cuti, u32& dqref)
   {
-    if(cuti == Nav) return false; //short-circuit
+    if(!okUTItoContinue(cuti)) return false; //short-circuit
 
     bool rtnb = false;
     if(getUlamTypeByIndex(cuti)->getUlamClass() == UC_QUARK)
@@ -905,18 +921,23 @@ namespace MFM {
     return (ut->isHolder());
   }
 
-  //updates key. we can do this now that UTI is used and the UlamType * isn't saved
-  void CompilerState::setBitSize(UTI utArg, s32 bits)
+  //updates key. we can do this now that UTI is used and the UlamType * isn't saved;
+  // return false if ERR
+  bool CompilerState::setBitSize(UTI utArg, s32 bits)
   {
     return setUTISizes(utArg, bits, getArraySize(utArg)); //keep current arraysize
   }
 
-  void CompilerState::setUTISizes(UTI utArg, s32 bitsize, s32 arraysize)
+  // return false if ERR
+  bool CompilerState::setUTISizes(UTI utArg, s32 bitsize, s32 arraysize)
   {
     UlamType * ut = getUlamTypeByIndex(utArg);
 
     if(ut->isComplete())
-      return;
+      return true;
+
+    if(!okUTItoContinue(utArg))
+      return false;
 
     //redirect primitives;
     ULAMCLASSTYPE classtype = ut->getUlamClass();
@@ -938,7 +959,7 @@ namespace MFM {
 	    msg << "Trying to exceed allotted bit size (" << MAXSTATEBITS << ") for element ";
 	    msg << ut->getUlamTypeNameBrief().c_str() << " with " << total << " bits";
 	    MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR);
-	    return;
+	    return false;
 	  }
       }
 
@@ -950,7 +971,7 @@ namespace MFM {
 	    msg << "Trying to exceed allotted bit size (" << MAXBITSPERQUARK << ") for quark ";
 	    msg << ut->getUlamTypeNameBrief().c_str() << " with " << total << " bits";
 	    MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR);
-	    return;
+	    return false;
 	  }
       }
 
@@ -961,7 +982,7 @@ namespace MFM {
     UlamKeyTypeSignature newkey = UlamKeyTypeSignature(key.getUlamKeyTypeSignatureNameId(), bitsize, arraysize, key.getUlamKeyTypeSignatureClassInstanceIdx(), key.getUlamKeyTypeSignatureReferenceType());
 
     if(key == newkey)
-      return;
+      return true;
 
     //removes old key and its ulamtype from map, if no longer pointed to
     deleteUlamKeyTypeSignature(key, utArg);
@@ -986,6 +1007,7 @@ namespace MFM {
       msg << "Sizes SET for Class: " << newut->getUlamTypeName().c_str() << " (UTI" << utArg << ")";
       MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), DEBUG);
     }
+    return true;
   } //setUTISizes
 
   void CompilerState::mergeClassUTI(UTI olduti, UTI cuti)
@@ -1105,13 +1127,14 @@ namespace MFM {
     return;
   } //initUTIAlias
 
-  void CompilerState::setSizesOfNonClass(UTI utArg, s32 bitsize, s32 arraysize)
+  // return false if ERR
+  bool CompilerState::setSizesOfNonClass(UTI utArg, s32 bitsize, s32 arraysize)
   {
     UlamType * ut = getUlamTypeByIndex(utArg);
     assert(ut->getUlamClass() == UC_NOTACLASS);
 
     if(ut->isComplete())
-      return;  //nothing to do
+      return true;  //nothing to do
 
     ULAMTYPE bUT = ut->getUlamTypeEnum();
     //disallow zero-sized primitives (no such thing as a BitVector<0u>)
@@ -1126,7 +1149,7 @@ namespace MFM {
 	    msg << bitsize;
 	    msg << ") to set for primitive type: " << UlamType::getUlamTypeEnumAsString(bUT);
 	    MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR);
-	    return;
+	    return false;
 	  }
 	//Void with zero bitsize
 	if(arraysize != NONARRAYSIZE)
@@ -1135,7 +1158,7 @@ namespace MFM {
 	    std::ostringstream msg;
 	    msg << "Invalid Void type array: " << ut->getUlamTypeNameBrief().c_str();
 	    MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR);
-	    return;
+	    return false;
 	  }
       }
     else if(bUT == Void)
@@ -1143,14 +1166,14 @@ namespace MFM {
 	std::ostringstream msg;
 	msg << "Invalid nonzero bitsize (" << bitsize << ") for Void type";
 	MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR);
-	return;
+	return false;
       }
 
     //continue with valid number of bits
     UlamKeyTypeSignature newkey = UlamKeyTypeSignature(key.getUlamKeyTypeSignatureNameId(), bitsize, arraysize, key.getUlamKeyTypeSignatureClassInstanceIdx(), key.getUlamKeyTypeSignatureReferenceType());
 
     if(key == newkey)
-      return;
+      return true;
 
     //remove old key from map, if no longer pointed to by any UTIs
     deleteUlamKeyTypeSignature(key, utArg);
@@ -1172,7 +1195,7 @@ namespace MFM {
       msg << " (UTI" << utArg << ")";
       MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), DEBUG);
     }
-
+    return true;
   } //setSizesOfNonClass
 
   s32 CompilerState::getDefaultBitSize(UTI uti)
@@ -1230,7 +1253,7 @@ namespace MFM {
 	SymbolClassName * cnsym = NULL;
 	AssertBool isDefined = alreadyDefinedSymbolClassName(csym->getId(), cnsym);
 	assert(isDefined);
-	return cnsym->getSuperClassForClassInstance(subuti); //returns super UTI, or Nouti if no inheritance
+	return cnsym->getSuperClassForClassInstance(subuti); //returns super UTI, or Nouti if no inheritance, Hzy if UNSEEN
       }
     return Nouti; //even for non-classes
   } //isClassASubclass
@@ -1404,8 +1427,8 @@ namespace MFM {
   bool CompilerState::addIncompleteClassSymbolToProgramTable(Token cTok, SymbolClassName * & symptr)
   {
     u32 dataindex = cTok.m_dataindex;
-    AssertBool isDefined = (symptr == NULL && !alreadyDefinedSymbolClassName(dataindex, symptr));
-    assert(isDefined);
+    AssertBool isNotDefined = ((symptr == NULL) && !alreadyDefinedSymbolClassName(dataindex, symptr));
+    assert(isNotDefined);
 
     UlamKeyTypeSignature key(dataindex, UNKNOWNSIZE);  //"-2" and scalar default
     UTI cuti = makeUlamType(key, Class);  //**gets next unknown uti type
@@ -1428,11 +1451,11 @@ namespace MFM {
   } //addIncompleteClassSymbolToProgramTable
 
   //temporary UlamType which will be updated during type labeling.
-  bool CompilerState::addIncompleteClassSymbolToProgramTable(Token cTok, SymbolClassNameTemplate * & symptr)
+  bool CompilerState::addIncompleteTemplateClassSymbolToProgramTable(Token cTok, SymbolClassNameTemplate * & symptr)
   {
     u32 dataindex = cTok.m_dataindex;
-    AssertBool isDefined = (symptr == NULL && !alreadyDefinedSymbolClassNameTemplate(dataindex,symptr));
-    assert(isDefined);
+    AssertBool isNotDefined = ((symptr == NULL) && !alreadyDefinedSymbolClassNameTemplate(dataindex,symptr));
+    assert(isNotDefined);
 
     UlamKeyTypeSignature key(dataindex, UNKNOWNSIZE); //"-2" and scalar default
     UTI cuti = makeUlamType(key, Class); //**gets next unknown uti type
@@ -1449,10 +1472,31 @@ namespace MFM {
     symptr = new SymbolClassNameTemplate(cTok, cuti, classblock, *this);
     m_programDefST.addToTable(dataindex, symptr);
     m_unseenClasses.insert(symptr);
+    symptr->setSuperClass(Hzy);
 
     popClassContext();
     return true; //compatible with alreadyDefinedSymbolClassNameTemplate return
-  } //addIncompleteClassSymbolToProgramTable
+  } //addIncompleteTemplateClassSymbolToProgramTable
+
+  UTI CompilerState::addStubCopyToAncestorClassTemplate(UTI stubTypeToCopy,  UTI context)
+  {
+    //handle inheritance of stub super class, based on its template
+    UTI superuti = stubTypeToCopy;
+    assert((superuti != Nouti) && (superuti != Hzy));
+    assert(isClassAStub(superuti));
+    UlamType * superut = getUlamTypeByIndex(superuti);
+    UlamKeyTypeSignature superkey = superut->getUlamKeyTypeSignature();
+    u32 superid = superkey.getUlamKeyTypeSignatureNameId();
+    SymbolClassNameTemplate * superctsym = NULL;
+    AssertBool isDefined = alreadyDefinedSymbolClassNameTemplate(superid, superctsym);
+    assert(isDefined);
+
+    UlamKeyTypeSignature newstubkey(superid, UNKNOWNSIZE);  //"-2" and scalar default
+    UTI newstubcopyuti = makeUlamType(newstubkey, Class);  //**gets next unknown uti type
+    superctsym->copyAStubClassInstance(superuti, newstubcopyuti, context);
+    superctsym->mergeClassInstancesFromTEMP(); //not mid-iteration!!
+    return newstubcopyuti;
+  } //addStubCopyToAncestorClassTemplate
 
   void CompilerState::resetUnseenClass(SymbolClassName * cnsym, Token identTok)
   {
@@ -1489,6 +1533,9 @@ namespace MFM {
   {
     bool rtnB = false;
     SymbolClass * csym = NULL;
+
+    assert(okUTItoContinue(incomplete));
+
     UlamType * ict = getUlamTypeByIndex(incomplete);
     assert(ict->getUlamClass() == UC_UNSEEN); //missing
     if(alreadyDefinedSymbolClass(incomplete, csym))
@@ -1497,7 +1544,7 @@ namespace MFM {
 	AssertBool isDefined = alreadyDefinedSymbolClassName(csym->getId(), cnsym);
 	assert(isDefined);
 	UTI but = cnsym->getUlamTypeIdx();
-
+	assert(okUTItoContinue(but));
 	ULAMCLASSTYPE bc = getUlamTypeByIndex(but)->getUlamClass();
 	//e.g. out-of-scope typedef is not a class, return false
 	if(bc == UC_ELEMENT || bc == UC_QUARK)
@@ -1551,25 +1598,54 @@ namespace MFM {
 
 	//hazy check..
 	UTI buti = blockNode->getNodeType();
-if(blockNode->isAClassBlock() && (isClassAStub(buti) || ((isClassASubclass(buti) != Nouti) && !((NodeBlockClass *) blockNode)->isSuperClassLinkReady())))
+	if(blockNode->isAClassBlock() && (isClassAStub(buti) || ((isClassASubclass(buti) != Nouti) && !((NodeBlockClass *) blockNode)->isSuperClassLinkReady())))
 	  hasHazyKin = true;
 
-	blockNode = blockNode->getPreviousBlockPointer(); //traverse the chain
+	blockNode = blockNode->getPreviousBlockPointer(); //traverse the chain, including templates (not ancestors)
       }
 
     //data member variables in class block; function symbols are linked to their
     //function def block; check function data members separately.
     if(!brtn)
+      brtn = isDataMemberIdInClassScope(dataindex, symptr, hasHazyKin);
+
+    if(!brtn)
       brtn = isFuncIdInClassScope(dataindex, symptr, hasHazyKin);
     return brtn;
   } //alreadyDefinedSymbol
+
+  bool CompilerState::isDataMemberIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin)
+  {
+    bool brtn = false;
+    //assert(!hasHazyKin); might come from alreadyDefinedSymbol now, and have a hazy chain.
+
+    //start with the current class block and look up family tree
+    //until the 'variable id' is found.
+    NodeBlockClass * classblock = getClassBlock();
+
+    //substitute another selected class block to search for data member
+    if(useMemberBlock())
+      classblock = getCurrentMemberClassBlock();
+
+    while(!brtn && classblock)
+      {
+	brtn = classblock->isIdInScope(dataindex,symptr); //returns symbol
+
+	UTI cuti = classblock->getNodeType();
+	if(isClassAStub(cuti) || ((isClassASubclass(cuti) != Nouti) && !classblock->isSuperClassLinkReady()))
+	  hasHazyKin = true; //self is stub
+
+	classblock = classblock->getSuperBlockPointer(); //inheritance chain
+      }
+    return brtn;
+  } //isDataMemberIdInClassScope
 
   bool CompilerState::isFuncIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin)
   {
     bool brtn = false;
     //assert(!hasHazyKin); might come from alreadyDefinedSymbol now, and have a hazy chain.
 
-    //start with the current "top" block and look down the stack
+    //start with the current class block and look up family tree
     //until the 'variable id' is found.
     NodeBlockClass * classblock = getClassBlock();
 
@@ -1585,7 +1661,7 @@ if(blockNode->isAClassBlock() && (isClassAStub(buti) || ((isClassASubclass(buti)
 	if(isClassAStub(cuti) || ((isClassASubclass(cuti) != Nouti) && !classblock->isSuperClassLinkReady()))
 	  hasHazyKin = true; //self is stub
 
-	classblock = (NodeBlockClass *) classblock->getPreviousBlockPointer(); //inheritance chain
+	classblock = classblock->getSuperBlockPointer(); //inheritance chain
       }
     return brtn;
   } //isFuncIdInClassScope
@@ -1593,7 +1669,7 @@ if(blockNode->isAClassBlock() && (isClassAStub(buti) || ((isClassASubclass(buti)
   bool CompilerState::isFuncIdInClassScopeNNO(NNO cnno, u32 dataindex, Symbol * & symptr, bool& hasHazyKin)
   {
     UTI cuti = findAClassByNodeNo(cnno); //class of cnno
-    assert(cuti != Nav);
+    assert(okUTItoContinue(cuti));
     assert(!hasHazyKin);
     return isFuncIdInAClassScope(cuti, dataindex, symptr, hasHazyKin);
   } //isFuncIdInClassScopeNNO
@@ -1618,7 +1694,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     UTI superuti = isClassASubclass(cuti);
     while(!rtnb)
       {
-	if(superuti != Nouti)
+	if((superuti != Nouti) && (superuti != Hzy))
 	  {
 	    SymbolClass * supercsym = NULL;
 	    AssertBool isDefined = alreadyDefinedSymbolClass(superuti, supercsym);
@@ -1916,6 +1992,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   const char * CompilerState::getAsMangledFunctionName(UTI ltype, UTI rtype)
   {
+    assert(okUTItoContinue(rtype));
     ULAMCLASSTYPE rclasstype = getUlamTypeByIndex(rtype)->getUlamClass();
     if(rclasstype == UC_QUARK)
       return getIsMangledFunctionName(ltype);
@@ -1929,6 +2006,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   const char * CompilerState::getBuildDefaultAtomFunctionName(UTI ltype)
   {
+    assert(okUTItoContinue(ltype));
     ULAMCLASSTYPE lclasstype = getUlamTypeByIndex(ltype)->getUlamClass();
     if(lclasstype == UC_ELEMENT)
       return BUILD_DEFAULT_ATOM_FUNCNAME; //for elements
@@ -2036,6 +2114,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   const std::string CompilerState::getBitSizeTemplateString(UTI uti)
   {
+    assert(okUTItoContinue(uti));
     ULAMCLASSTYPE classtype = getUlamTypeByIndex(uti)->getUlamClass();
     assert(classtype == UC_QUARK || classtype == UC_ELEMENT);
 
@@ -2051,6 +2130,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
   //already down to primitive types for casting.
   const std::string CompilerState::getBitVectorLengthAsStringForCodeGen(UTI uti)
   {
+    assert(okUTItoContinue(uti));
     ULAMCLASSTYPE classtype = getUlamTypeByIndex(uti)->getUlamClass();
 
     std::ostringstream lenstr;
@@ -2276,6 +2356,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
   bool CompilerState::thisClassIsAQuark()
   {
     UTI cuti = getCompileThisIdx();
+    assert(okUTItoContinue(cuti));
     return(getUlamTypeByIndex(cuti)->getUlamClass() == UC_QUARK);
   } //thisClassIsAQuark
 
@@ -2285,7 +2366,9 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     AssertBool isDefined = alreadyDefinedSymbolClass(quti, csym);
     assert(isDefined);
 
-    AssertBool isQuark = (getUlamTypeByIndex(csym->getUlamTypeIdx())->getUlamClass() == UC_QUARK);
+    UTI cuti = csym->getUlamTypeIdx();
+    assert(okUTItoContinue(cuti));
+    AssertBool isQuark = (getUlamTypeByIndex(cuti)->getUlamClass() == UC_QUARK);
     assert(isQuark);
     NodeBlockClass * classNode = csym->getClassBlockNode();
     assert(classNode);
@@ -2413,6 +2496,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
   const std::string CompilerState::getTmpVarAsString(UTI uti, s32 num, STORAGE stg)
   {
     assert(uti != Void);
+    assert(okUTItoContinue(uti));
 
     std::ostringstream tmpVar; //into
     PACKFIT packed = determinePackable(uti);
@@ -2524,13 +2608,20 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     if(!rtnNode)
       {
 	UTI stubuti = m_pendingArgStubContext;
-	if( stubuti != Nav)
+	if(stubuti != Nouti)
 	  {
 	    u32 stubid = getUlamKeyTypeSignatureByIndex(stubuti).getUlamKeyTypeSignatureNameId();
 	    SymbolClassNameTemplate * cntsym = NULL;
 	    AssertBool isDefined = alreadyDefinedSymbolClassNameTemplate(stubid, cntsym);
 	    assert(isDefined);
 	    rtnNode =  cntsym->findNodeNoInAClassInstance(stubuti, n);
+	  }
+	else
+	  {
+	    //what if in ancestor?
+	    UTI superuti = isClassASubclass(getCompileThisIdx());
+	    if((superuti != Nouti) && (superuti != Hzy))
+	      rtnNode = findNodeNoInAClass(n, superuti);
 	  }
       }
     return rtnNode;
@@ -2574,6 +2665,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return cc.getCompileThisId();
   }
 
+  //also getUlamTypeForThisClass()
   UTI CompilerState::getCompileThisIdx()
   {
     ClassContext cc;
@@ -2722,6 +2814,11 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
   bool CompilerState::isPtr(UTI puti)
   {
     return ((puti == Ptr) || (puti == PtrAbs));
+  }
+
+  bool CompilerState::okUTItoContinue(UTI uti)
+  {
+    return ((uti != Nav) && (uti != Hzy));
   }
 
 } //end MFM

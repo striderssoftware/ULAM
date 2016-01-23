@@ -82,6 +82,10 @@ namespace MFM{
 
     virtual bool isAClassBlock();
 
+    NodeBlockClass * getSuperBlockPointer();
+
+    void setSuperBlockPointer(NodeBlockClass *);
+
     bool isSuperClassLinkReady();
 
     virtual UTI checkAndLabelType();
@@ -92,7 +96,7 @@ namespace MFM{
 
     Node * getParameterNode(u32 n) const;
 
-    virtual void countNavNodes(u32& cnt);
+    virtual void countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt);
 
     bool hasCustomArray();
 
@@ -117,13 +121,14 @@ namespace MFM{
 
     virtual u32 getNumberOfSymbolsInTable();
 
+    u32 getNumberOfPotentialClassArgumentSymbols();
+
     virtual u32 getSizeOfSymbolsInTable();
 
     virtual s32 getBitSizesOfVariableSymbolsInTable();
 
     virtual s32 getMaxBitSizeOfVariableSymbolsInTable();
 
-    //virtual s32 findUlamTypeInTable(UTI utype);
      s32 findUlamTypeInTable(UTI utype, UTI& insidecuti);
 
     bool isFuncIdInScope(u32 id, Symbol * & symptrref);
@@ -165,6 +170,8 @@ namespace MFM{
     s32 m_virtualmethodMaxIdx;
 
   private:
+
+    NodeBlockClass * m_superBlockNode;
 
     bool m_isEmpty; //replaces separate node
     UTI m_templateClassParentUTI;
