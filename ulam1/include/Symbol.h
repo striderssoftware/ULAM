@@ -1,8 +1,8 @@
 /**                                        -*- mode:C++ -*-
  * Symbol.h -  Basic handling of Symbols for ULAM
  *
- * Copyright (C) 2014-2015 The Regents of the University of New Mexico.
- * Copyright (C) 2014-2015 Ackleyshack LLC.
+ * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
+ * Copyright (C) 2014-2016 Ackleyshack LLC.
  *
  * This file is part of the ULAM programming language compilation system.
  *
@@ -29,7 +29,7 @@
   \file Symbol.h -  Basic handling of Symbols for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
-  \date (C) 2014-2015 All rights reserved.
+  \date (C) 2014-2016 All rights reserved.
   \gpl
 */
 
@@ -73,7 +73,8 @@ namespace MFM{
     virtual bool isConstant();
     virtual bool isClass();
 
-    void setDataMember();
+    void setDataMemberClass(UTI cuti);
+    UTI getDataMemberClass();
     bool isDataMember();
 
     virtual bool isModelParameter();
@@ -114,7 +115,7 @@ namespace MFM{
     Token m_idtok; // id to its name (string) in lexer; also in ST
     UTI m_uti; // may seem redundant, but not; from NodeVarDecl, before m_value known.
                // base type, not array type, used here (e.g. NodeBinaryOp::calcNodeType)
-    bool m_dataMember;
+    UTI m_dataMemberClass;
     ALT m_autoLocalType;
     bool m_isSelf;       // hidden arg symbol
     NNO m_stBlockNo;
