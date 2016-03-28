@@ -202,10 +202,7 @@ namespace MFM {
 	    msg << "Constant value expression for: ";
 	    msg << m_state.m_pool.getDataAsString(m_cid).c_str();
 	    msg << ", is invalid";
-	    //	    if(m_nodeExpr->isAConstant() && m_nodeExpr->isReadyConstant())
-	      MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	      //else
-	      // MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG); //possibly still hazy
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
 	    setNodeType(Nav);
 	    return Nav; //short-circuit
 	  }
@@ -260,8 +257,6 @@ namespace MFM {
 	    msg << "' UTI" << suti << " while labeling class: ";
 	    msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-	    //suti = Hzy;
-	    //m_state.setGoAgain();
 	  }
       }
     else
@@ -446,7 +441,6 @@ namespace MFM {
 	return Hzy;
       }
 
-#if 1
     //t3403, t3490
     //insure constant value fits in its declared type
     // no saturation without an explicit cast.
@@ -465,7 +459,6 @@ namespace MFM {
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	return Hzy; //necessary if not just a warning.
       }
-#endif
 
     //cast first, also does safeCast
     UlamType * ut = m_state.getUlamTypeByIndex(uti);
@@ -540,6 +533,38 @@ namespace MFM {
   {
     //do nothing, but override
   }
+
+  void NodeConstantDef::printUnresolvedVariableDataMembers()
+  {
+    assert(m_constSymbol);
+    UTI it = m_constSymbol->getUlamTypeIdx();
+    if(!m_state.isComplete(it))
+      {
+	std::ostringstream msg;
+	msg << "Unresolved type <";
+	msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
+	msg << "> used with constant def symbol name '" << getName() << "'";
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	setNodeType(Nav); //compiler counts
+      } //not complete
+  } //printUnresolvedVariableDataMembers
+
+  void NodeConstantDef::printUnresolvedLocalVariables(u32 fid)
+  {
+    assert(m_constSymbol);
+    UTI it = m_constSymbol->getUlamTypeIdx();
+    if(!m_state.isComplete(it))
+      {
+	// e.g. error/t3298 Int(Fu.sizeof)
+	std::ostringstream msg;
+	msg << "Unresolved type <";
+	msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
+	msg << "> used with local variable symbol name '" << getName() << "'";
+	msg << " in function: " << m_state.m_pool.getDataAsString(fid);
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	setNodeType(Nav); //compiler counts
+      } //not complete
+  } //printUnresolvedLocalVariables
 
   void NodeConstantDef::genCode(File * fp, UlamValue& uvpass)
   {}

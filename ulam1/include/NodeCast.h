@@ -1,8 +1,8 @@
 /**                                        -*- mode:C++ -*-
  * NodeCast.h - Basic Node for handling Type Casting for ULAM
  *
- * Copyright (C) 2014-2015 The Regents of the University of New Mexico.
- * Copyright (C) 2014-2015 Ackleyshack LLC.
+ * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
+ * Copyright (C) 2014-2016 Ackleyshack LLC.
  *
  * This file is part of the ULAM programming language compilation system.
  *
@@ -29,7 +29,7 @@
   \file NodeCast.h - Basic Node for handling Type Casting for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
-  \date (C) 2014-2015 All rights reserved.
+  \date (C) 2014-2016 All rights reserved.
   \gpl
 */
 
@@ -64,6 +64,8 @@ namespace MFM{
 
     virtual const std::string prettyNodeName();
 
+    virtual TBOOL getStoreIntoAble();
+
     void setCastType(UTI tobe);
 
     UTI getCastType();
@@ -81,6 +83,8 @@ namespace MFM{
     virtual bool isWordSizeConstant();
 
     virtual bool isFunctionCall();
+
+    virtual bool isExplicitReferenceCast(); //only NodeCast may return true
 
     virtual FORECAST safeToCastTo(UTI newType);
 
@@ -113,9 +117,12 @@ namespace MFM{
 
     bool needsACast(); // trying to avoid extraneous casting.
 
+    void genCodeReadNonPrimitiveIntoATmpVar(File * fp, UlamValue &uvpass);
+
     void genCodeCastAtomAndElement(File * fp, UlamValue & uvpass);
     void genCodeCastAtomAndQuark(File * fp, UlamValue & uvpass);
     void genCodeCastDecendentElement(File * fp, UlamValue & uvpass);
+    void genCodeCastAncestorQuarkAsSubElement(File * fp, UlamValue & uvpass);
     void genCodeCastDecendentQuark(File * fp, UlamValue & uvpass);
 
     void genCodeCastAsReference(File * fp, UlamValue & uvpass);

@@ -863,6 +863,19 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
       m_nodeNext->packBitsInOrderOfDeclaration(offset);
   } //packBitsForVariableDataMembers
 
+  void NodeBlockClass::printUnresolvedVariableDataMembers()
+  {
+    if(m_nodeNext)
+      m_nodeNext->printUnresolvedVariableDataMembers();
+
+    m_functionST.printUnresolvedLocalVariablesForTableOfFunctions();
+  } //printUnresolvedVariableDataMembers
+
+  void NodeBlockClass::printUnresolvedLocalVariables(u32 fid)
+  {
+    assert(0); //override
+  } //printUnresolvedLocalVariables
+
   u32 NodeBlockClass::countNativeFuncDecls()
   {
     if(isEmpty())
@@ -923,8 +936,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     m_state.indent(fp);
     fp->write(cut->getUlamTypeMangledName().c_str());
     fp->write("<EC> ");
-    fp->write(cut->getUlamTypeMangledName().c_str());
-    fp->write("<EC>::THE_INSTANCE;\n\n");
+    fp->write(m_state.getEffectiveSelfMangledNameByIndex(cuti).c_str());
+    fp->write(";\n\n");
 
     //output any externs, outside of class decl
     genCodeExtern(fp, declOnly);

@@ -178,6 +178,7 @@ namespace MFM{
     UlamType * getUlamTypeByIndex(UTI uti);
     const std::string getUlamTypeNameBriefByIndex(UTI uti);
     const std::string getUlamTypeNameByIndex(UTI uti);
+    const std::string getEffectiveSelfMangledNameByIndex(UTI uti);
 
     ULAMTYPE getBaseTypeFromToken(Token tok);
     UTI getUlamTypeFromToken(Token tok, s32 typebitsize, s32 arraysize);
@@ -204,6 +205,8 @@ namespace MFM{
     ALT getReferenceType(UTI utArg);
     bool isReference(UTI utArg);
     bool isComplete(UTI utArg);
+    bool completeAReferenceType(UTI utArg);
+    bool completeAReferenceTypeWith(UTI utArg, UTI derefuti);
     bool isHolder(UTI utArg);
     bool setBitSize(UTI utArg, s32 total);
     bool setUTISizes(UTI utArg, s32 bitsize, s32 arraysize);

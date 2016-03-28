@@ -423,8 +423,8 @@ namespace MFM {
 			fp->write(", ");
 			fp->write_decimal_unsigned(sut->getBitSize()); //len
 			fp->write(", da, &");
-			fp->write(sut->getUlamTypeMangledName().c_str()); //effself
-			fp->write("<EC>::THE_INSTANCE)."); //close wrapper
+			fp->write(m_state.getEffectiveSelfMangledNameByIndex(suti).c_str());
+			fp->write(")."); //close wrapper
 			fp->write(sut->writeMethodForCodeGen().c_str());
 			fp->write("(");
 			fp->write(qdhex.str().c_str());
@@ -465,8 +465,8 @@ namespace MFM {
 			    fp->write("u, ");
 			    fp->write_decimal_unsigned(itemlen); //len
 			    fp->write("u, da, &");
-			    fp->write(scalarut->getUlamTypeMangledName().c_str()); //effself
-			    fp->write("<EC>::THE_INSTANCE).");
+			    fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalaruti).c_str());
+			    fp->write(").");
 			    fp->write(scalarut->writeMethodForCodeGen().c_str());
 			    fp->write("(");
 			    fp->write(qdhex.str().c_str());
@@ -670,6 +670,18 @@ namespace MFM {
 	it++;
       }
   } //labelTableOfFunctions
+
+  void SymbolTable::printUnresolvedLocalVariablesForTableOfFunctions()
+  {
+    std::map<u32, Symbol *>::iterator it = m_idToSymbolPtr.begin();
+    while(it != m_idToSymbolPtr.end())
+      {
+	Symbol * sym = it->second;
+	assert(sym && sym->isFunction());
+	((SymbolFunctionName *) sym)->printUnresolvedLocalVariablesInFunctionDefs();
+	it++;
+      }
+  } //printUnresolvedVariablesForTableOfClasses
 
   void SymbolTable::countNavNodesAcrossTableOfFunctions(u32& ncnt, u32& hcnt, u32& nocnt)
   {
@@ -1370,6 +1382,24 @@ namespace MFM {
 	it++;
       }
   } //packBitsForTableOfClasses
+
+  void SymbolTable::printUnresolvedVariablesForTableOfClasses()
+  {
+    std::map<u32, Symbol *>::iterator it = m_idToSymbolPtr.begin();
+    while(it != m_idToSymbolPtr.end())
+      {
+	Symbol * sym = it->second;
+	assert(sym && sym->isClass());
+
+	UTI cuti = sym->getUlamTypeIdx();
+	//skip anonymous classes
+	if(!isAnonymousClass(cuti))
+	  {
+	    ((SymbolClassName *) sym)->printUnresolvedVariablesForClassInstances();
+	  }
+	it++;
+      }
+  } //printUnresolvedVariablesForTableOfClasses
 
   //bypasses THIS class being compiled
   void SymbolTable::generateIncludesForTableOfClasses(File * fp)

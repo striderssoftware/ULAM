@@ -113,6 +113,7 @@ namespace MFM {
 
     if(m_typedefSymbol)
       {
+	//m_typedefSymbol is the (rhs) type alias
 	it = m_typedefSymbol->getUlamTypeIdx();
 
 	//check for UNSEEN Class' ClassType (e.g. array of UC_QUARK)
@@ -150,7 +151,7 @@ namespace MFM {
 		msg << " UTI" << duti << " while labeling class: ";
 		msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		m_typedefSymbol->resetUlamType(duti); //consistent!
+		m_typedefSymbol->resetUlamType(duti); //consistent! (must be same ref type)
 		m_state.mapTypesInCurrentClass(it, duti);
 		it = duti;
 	      }
@@ -165,8 +166,7 @@ namespace MFM {
 	    msg << "' UTI" << it << " while labeling class: ";
 	    msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-	    //it = Nav; unlike vardecl
-	    m_state.setGoAgain(); //since not error
+	    m_state.setGoAgain(); //since not error; unlike vardecl
 	  }
       } // got typedef symbol
 
@@ -226,6 +226,37 @@ namespace MFM {
   {
     //do nothing, but override
   }
+
+  void NodeTypedef::printUnresolvedVariableDataMembers()
+  {
+    assert(m_typedefSymbol);
+    UTI it = m_typedefSymbol->getUlamTypeIdx();
+    if(!m_state.isComplete(it))
+      {
+	std::ostringstream msg;
+	msg << "Unresolved type <";
+	msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
+	msg << "> used with typedef symbol name '" << getName() << "'";
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	setNodeType(Nav); //compiler counts
+      } //not complete
+  } //printUnresolvedVariableDataMembers
+
+  void NodeTypedef::printUnresolvedLocalVariables(u32 fid)
+  {
+    assert(m_typedefSymbol);
+    UTI it = m_typedefSymbol->getUlamTypeIdx();
+    if(!m_state.isComplete(it))
+      {
+	std::ostringstream msg;
+	msg << "Unresolved type <";
+	msg << m_state.getUlamTypeNameBriefByIndex(it).c_str();
+	msg << "> used with typedef symbol name '" << getName() << "'";
+	msg << " in function: " << m_state.m_pool.getDataAsString(fid);
+	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	setNodeType(Nav); //compiler counts
+      } //not complete
+  } //printUnresolvedLocalVariables
 
   void NodeTypedef::countNavHzyNoutiNodes(u32& ncnt, u32& hcnt, u32& nocnt)
   {

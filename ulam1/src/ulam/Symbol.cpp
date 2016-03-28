@@ -49,6 +49,7 @@ namespace MFM {
   {
     assert((m_state.getReferenceType(m_uti) == m_state.getReferenceType(newuti)) || m_state.isHolder(m_uti));
     m_uti = newuti;
+    setAutoLocalType(m_state.getReferenceType(newuti));
   }
 
   UTI Symbol::getUlamTypeIdx()
@@ -150,12 +151,18 @@ namespace MFM {
 
   const std::string Symbol::getMangledName()
   {
-       std::ostringstream mangled;
-       std::string nstr = m_state.getDataAsStringMangled(getId());
-
-       mangled << getMangledPrefix() << nstr.c_str();
-       return mangled.str();
-  }
+    std::ostringstream mangled;
+    if(isSelf())
+      {
+	mangled << m_state.getHiddenArgName(); // ur
+      }
+    else
+      {
+	std::string nstr = m_state.getDataAsStringMangled(getId());
+	mangled << getMangledPrefix() << nstr.c_str();
+      }
+    return mangled.str();
+  } //getMangledName
 
   //atomic parameter type, not model parameter.
   const std::string Symbol::getMangledNameForParameterType()
@@ -170,8 +177,6 @@ namespace MFM {
       {
 	std::ostringstream epmangled;
 	epmangled << sut->getImmediateModelParameterStorageTypeAsString();
-	//if(classtype == UC_QUARK)
-	//  epmangled << "::Us";
 	assert(classtype == UC_NOTACLASS);
 	return epmangled.str();
       }

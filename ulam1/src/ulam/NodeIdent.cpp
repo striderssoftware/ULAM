@@ -268,7 +268,11 @@ namespace MFM {
 		m_varSymbol->resetUlamType(mappedUTI); //consistent!
 		it = mappedUTI;
 	      }
-
+	    //else if(m_varSymbol->isSelf())
+	    else if(m_varSymbol->isSelf() || m_state.isReference(it))
+	      {
+		m_state.completeAReferenceType(it);
+	      }
 	    if(!m_state.isComplete(it)) //reloads to recheck for debug message
 	      {
 		std::ostringstream msg;
@@ -278,8 +282,6 @@ namespace MFM {
 		msg << "' UTI" << it << " while labeling class: ";
 		msg << m_state.getUlamTypeNameBriefByIndex(cuti).c_str();
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		//it = Hzy; //does this help?
-		//m_state.setGoAgain();
 	      }
 	  }
       }
@@ -457,11 +459,8 @@ namespace MFM {
 	assert(m_state.okUTItoContinue(ttype));
 	if((m_state.getUlamTypeByIndex(ttype)->getUlamClass() == UC_QUARK))
 	  {
-	    u32 vid = m_varSymbol->getId();
-	    if(vid == m_state.m_pool.getIndexForDataString("self"))
-	      {
-		selfuvp = m_state.getAtomPtrFromSelfPtr();
-	      }
+	    if(m_varSymbol->isSelf())
+	      selfuvp = m_state.getAtomPtrFromSelfPtr();
 	    //else
 	  }
 	return selfuvp;
@@ -514,7 +513,7 @@ namespace MFM {
     if((classtype == UC_ELEMENT) || m_state.isAtom(nuti))
       {
 	// ptr to explicit atom or element, (e.g. 'f' in f.a=1;)
-	uvpass = UlamValue::makePtr(tmpnum, TMPBITVAL, nuti, UNPACKED, m_state, 0, m_varSymbol->getId());
+	uvpass = UlamValue::makePtr(tmpnum, nut->getTmpStorageTypeForTmpVar(), nuti, UNPACKED, m_state, 0, m_varSymbol->getId());
       }
     else
       {
@@ -537,13 +536,13 @@ namespace MFM {
 		    pos = sym->getPosOffset();
 		  }
 		// 'pos' modified by this data member symbol's packed bit position
-		uvpass = UlamValue::makePtr(tmpnum, TMPREGISTER, nuti, m_state.determinePackable(nuti), m_state, pos + m_varSymbol->getPosOffset(), m_varSymbol->getId());
+		uvpass = UlamValue::makePtr(tmpnum, nut->getTmpStorageTypeForTmpVar(), nuti, m_state.determinePackable(nuti), m_state, pos + m_varSymbol->getPosOffset(), m_varSymbol->getId());
 	      }
 	  }
 	else
 	  {
 	    //local variable on the stack; could be array ptr!
-	    uvpass = UlamValue::makePtr(tmpnum, TMPREGISTER, nuti, m_state.determinePackable(nuti), m_state, 0, m_varSymbol->getId());
+	    uvpass = UlamValue::makePtr(tmpnum, nut->getTmpStorageTypeForTmpVar(), nuti, m_state.determinePackable(nuti), m_state, 0, m_varSymbol->getId());
 	  }
       }
   } //makeUlamValuePtrForCodeGen
@@ -587,8 +586,6 @@ namespace MFM {
 		  {
 		    //update holder key with name_id and possible array (UNKNOWNSIZE)
 		    UlamKeyTypeSignature newkey(m_state.getTokenAsATypeNameId(args.m_typeTok), args.m_bitsize, args.m_arraysize, Nouti, args.m_declRef);
-		    //UlamKeyTypeSignature hkey = tdut->getUlamKeyTypeSignature();
-		    //UlamKeyTypeSignature newkey(hkey.getUlamKeyTypeSignatureNameId(), args.m_bitsize, args.m_arraysize, Nouti, args.m_declRef);
 		    m_state.makeUlamTypeFromHolder(newkey, Holder, tduti); //update holder key, same uti
 		  }
 	      }
@@ -943,7 +940,6 @@ namespace MFM {
 
 	uti = m_state.getUlamTypeAsRef(auti, args.m_declRef); //ut not current; no deref.
 
-	//SymbolVariable * sym = makeSymbol(uti, m_state.getReferenceType(uti), auti);
 	SymbolVariable * sym = makeSymbol(uti, m_state.getReferenceType(uti), args.m_referencedUTI);
 	if(sym)
 	  {
@@ -1142,16 +1138,17 @@ namespace MFM {
 	fp->write(m_state.getTmpVarAsString(vuti, tmpVarNum2).c_str());
 	fp->write(" = ");
 	fp->write(m_state.getTmpVarAsString(vuti, uvpass.getPtrSlotIndex(), uvpass.getPtrStorage()).c_str());
-	//fp->write(".read();\n");
 	fp->write(".");
 	fp->write(vut->readMethodForCodeGen().c_str()); //generalized
 	fp->write("();\n");
 	// uvpass updated again
-	uvpass = UlamValue::makePtr(tmpVarNum2, TMPREGISTER, vuti, m_state.determinePackable(vuti), m_state, 0); //POS 0 justified (atom-based).
+	uvpass = UlamValue::makePtr(tmpVarNum2, vut->getTmpStorageTypeForTmpVar(), vuti, m_state.determinePackable(vuti), m_state, 0); //POS 0 justified (atom-based).
       }
     else
-      // UNCLEAR: should this be consistent with constants?
-      genCodeReadIntoATmpVar(fp, uvpass);
+      {
+	// UNCLEAR: should this be consistent with constants?
+	genCodeReadIntoATmpVar(fp, uvpass);
+      }
   } //genCode
 
   void NodeIdent::genCodeToStoreInto(File * fp, UlamValue& uvpass)

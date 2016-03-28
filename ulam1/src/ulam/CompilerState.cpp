@@ -562,6 +562,7 @@ namespace MFM {
     return rtnBool;
   } //deleteUlamKeyTypeSignature
 
+  // no side-effects, except to 3rd arg when return is true.
   bool CompilerState::mappedIncompleteUTI(UTI cuti, UTI auti, UTI& mappedUTI)
   {
     SymbolClass * csym = NULL;
@@ -673,16 +674,14 @@ namespace MFM {
 
 	if(!cnsymOfIncomplete->isClassTemplate())
 	  return suti;
-	if(skey.getUlamKeyTypeSignatureReferenceType() == ALT_AS)
+
+	ALT salt = getReferenceType(suti);
+	if(salt != ALT_NOT)
 	  {
 	    UTI asref = mapIncompleteUTIForCurrentClassInstance(getUlamTypeAsDeref(suti));
-	    return getUlamTypeAsRef(asref, ALT_AS);
+	    return getUlamTypeAsRef(asref, salt);
 	  }
-	if(skey.getUlamKeyTypeSignatureReferenceType() == ALT_REF)
-	  {
-	    UTI asref = mapIncompleteUTIForCurrentClassInstance(getUlamTypeAsDeref(suti));
-	    return getUlamTypeAsRef(asref, ALT_AS);
-	  }
+
 	if(!((SymbolClassNameTemplate *) cnsymOfIncomplete)->pendingClassArgumentsForStubClassInstance(suti))
 	  return suti;
       }
@@ -782,6 +781,23 @@ namespace MFM {
     assert(isDef);
     return ut->getUlamTypeName();
   }
+
+  const std::string CompilerState::getEffectiveSelfMangledNameByIndex(UTI uti)
+  {
+    UTI esuti = uti;
+    if(isReference(uti))
+      esuti = getUlamTypeAsDeref(uti);
+
+    UlamType * esut = NULL;
+    AssertBool isDef = isDefined(m_indexToUlamKey[esuti], esut);
+    assert(isDef);
+
+    assert(esut->getUlamTypeEnum() == Class);
+    std::ostringstream esmangled;
+    esmangled << esut->getUlamTypeMangledName().c_str();
+    esmangled << "<EC>::THE_INSTANCE";
+    return esmangled.str();
+  } //getEffectiveSelfMangledNameByIndex
 
   ULAMTYPE CompilerState::getBaseTypeFromToken(Token tok)
   {
@@ -983,8 +999,8 @@ namespace MFM {
 
   ULAMTYPECOMPARERESULTS CompilerState::isARefTypeOfUlamType(UTI refuti, UTI ofuti)
   {
-    UTI deref = getUlamTypeAsDeref(refuti);
-    return UlamType::compare(deref, ofuti, *this);
+    //either may be a ref of the other; uses checked both directions.
+    return UlamType::compare(getUlamTypeAsDeref(refuti), getUlamTypeAsDeref(ofuti), *this);
   } //isARefTypeOfUlamType
 
   UTI CompilerState::getUlamTypeOfConstant(ULAMTYPE etype)
@@ -1054,6 +1070,41 @@ namespace MFM {
     UlamType * ut = getUlamTypeByIndex(utArg);
     return ut->isComplete();
   } //isComplete
+
+  bool CompilerState::completeAReferenceType(UTI utArg)
+  {
+    UlamType * ut = getUlamTypeByIndex(utArg);
+    assert(ut->isReference());
+
+    if(ut->isComplete())
+      return true;
+
+    UTI derefuti = getUlamTypeAsDeref(utArg);
+    UlamType * derefut = getUlamTypeByIndex(derefuti);
+
+    if(!derefut->isComplete())
+      return false;
+
+    return completeAReferenceTypeWith(utArg, derefuti);
+  } //completeAReferenceType
+
+  bool CompilerState::completeAReferenceTypeWith(UTI utArg, UTI derefuti)
+  {
+    UlamType * derefut = getUlamTypeByIndex(derefuti);
+
+    if(!derefut->isComplete())
+      return false;
+
+    if(isHolder(utArg))
+      {
+	UlamKeyTypeSignature dekey = derefut->getUlamKeyTypeSignature();
+	UlamKeyTypeSignature newkey(dekey.getUlamKeyTypeSignatureNameId(), dekey.getUlamKeyTypeSignatureBitSize(), dekey.getUlamKeyTypeSignatureArraySize(), dekey.getUlamKeyTypeSignatureClassInstanceIdx(), ALT_REF);
+	makeUlamTypeFromHolder(newkey, derefut->getUlamTypeEnum(), utArg);
+	return true;
+      }
+
+    return setUTISizes(utArg, derefut->getBitSize(), derefut->getArraySize());
+  } //completeAReferenceTypeWith
 
   bool CompilerState::isHolder(UTI utArg)
   {
@@ -1519,29 +1570,23 @@ namespace MFM {
 	std::ostringstream msg;
 	msg << "Class without parameters already exists with the same name: ";
 	msg << m_pool.getDataAsString(symptr->getId()).c_str();
-	//msg << " (";
-	//msg << getUlamTypeNameByIndex(symptr->getUlamTypeIdx()).c_str();
-	//msg << ")";
 	MSG2(getFullLocationAsString(m_locOfNextLineText).c_str(), msg.str().c_str(), ERR); //parsing
       }
     return (rtnb && symptr->isClassTemplate());
   } //alreadyDefinedSymbolClassNameTemplate
 
-  //if necessary, searches for instance of class "template" with matching SCALAR uti
+  //if necessary, searches for instance of class "template" with matching SCALAR uti;
+  // automatically reduces arrays and references to their base class UTI.
   bool CompilerState::alreadyDefinedSymbolClass(UTI uti, SymbolClass * & symptr)
   {
     bool rtnb = false;
     UlamType * ut = getUlamTypeByIndex(uti);
 
-    //    if(ut->isHolder())
-    //  return alreadyDefinedSymbolClassAsHolder(uti, symptr); //id is uti as string id
-
     UTI scalarUTI = uti;
     if(!ut->isScalar())
-      scalarUTI = getUlamTypeAsScalar(uti);
+      scalarUTI = getUlamTypeAsScalar(uti); //ALT_ARRAYITEM ?
 
-    if(ut->isReference())
-      scalarUTI = getUlamTypeAsDeref(scalarUTI); //and deref
+    scalarUTI = getUlamTypeAsDeref(scalarUTI); //and deref
 
     SymbolClassName * cnsym = NULL;
     if(alreadyDefinedSymbolClassName(ut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId(), cnsym))
@@ -2768,8 +2813,8 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     UlamType * ut = getUlamTypeByIndex(uti);
     if(isAtom(uti) || (ut->getUlamClass() == UC_ELEMENT))
       {
+	//stg = TMPBITVAL or TMPTATOM; avoid loading a T into a tmpregister!
 	assert(stg != TMPREGISTER);
-	//stg = TMPBITVAL; //avoid loading a T into a tmpregister!
       }
 
     if(stg == TMPREGISTER)
@@ -2792,6 +2837,10 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 	  tmpVar << "Uh_6tlref" ; //tmp loadable autoref
 	else
 	  tmpVar << "Uh_6turef" ; //tmp unpacked autoref
+      }
+    else if(stg == TMPTATOM)
+      {
+	tmpVar << "Uh_3tut" ; //tmp unpacked atom T
       }
     else
       assert(0); //remove assumptions about tmpbitval.

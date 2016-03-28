@@ -30,9 +30,7 @@ namespace MFM {
     UTI nuti = getNodeType(); //UAtom for references; ow type of class/atom
     if(m_state.isAtom(nuti))
       return NodeAtomof::safeToCastTo(newType);
-
-    UlamType * newut = m_state.getUlamTypeByIndex(newType);
-    return newut->safeCast(nuti);
+    return m_state.getUlamTypeByIndex(newType)->safeCast(nuti);
   } //safeToCastTo
 
   UTI NodeInstanceof::checkAndLabelType()
@@ -48,7 +46,6 @@ namespace MFM {
 	else
 	  setNodeType(oftype); //Type or variable
       }
-
     Node::setStoreIntoAble(TBOOL_FALSE);
     return getNodeType();
   } //checkAndLabelType
@@ -115,10 +112,7 @@ namespace MFM {
 	    fp->write("const UlamClass<EC> * ");
 	    fp->write(m_state.getUlamClassTmpVarAsString(tmpuclass).c_str());
 	    fp->write(" = ");
-	    if(isself)
-	      fp->write("ur");
-	    else
-	      fp->write(m_varSymbol->getMangledName().c_str());
+	    fp->write(m_varSymbol->getMangledName().c_str());
 	    fp->write(".GetEffectiveSelf();\n");
 
 	    m_state.indent(fp);
@@ -158,8 +152,7 @@ namespace MFM {
 
     // THE READ:
     s32 tmpVarNum2 = m_state.getNextTmpVarNumber(); //tmp to read into
-    STORAGE rstor = nut->getUlamClass() == UC_QUARK ? TMPREGISTER : TMPBITVAL;
-    PACKFIT packfit = nut->getUlamClass() == UC_QUARK ? PACKEDLOADABLE : UNPACKED;
+    STORAGE rstor = nut->getTmpStorageTypeForTmpVar();
 
     m_state.indent(fp);
     fp->write("const ");
@@ -172,7 +165,7 @@ namespace MFM {
     fp->write(nut->readMethodForCodeGen().c_str());
     fp->write("();\n");
 
-    uvpass = UlamValue::makePtr(tmpVarNum2, rstor, nuti, packfit, m_state, 0, m_varSymbol ? m_varSymbol->getId() : 0);
+    uvpass = UlamValue::makePtr(tmpVarNum2, rstor, nuti, nut->getPackable(), m_state, 0, m_varSymbol ? m_varSymbol->getId() : 0);
 
     m_state.m_currentObjSymbolsForCodeGen.clear(); //clear remnant of rhs ?
   } //genCode

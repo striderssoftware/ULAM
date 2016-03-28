@@ -191,6 +191,7 @@ namespace MFM {
 	  }
 	rtnOK = false;
       } //not safe
+
     return rtnOK;
   } //checkSafeToCastTo
 
@@ -278,6 +279,11 @@ namespace MFM {
   }
 
   bool Node::isFunctionCall()
+  {
+    return false;
+  }
+
+  bool Node::isExplicitReferenceCast()
   {
     return false;
   }
@@ -398,6 +404,16 @@ namespace MFM {
   {
     assert(0);
   }
+
+  void Node::printUnresolvedVariableDataMembers()
+  {
+    assert(0);
+  } //printUnresolvedVariableDataMembers
+
+  void Node::printUnresolvedLocalVariables(u32 fid)
+  {
+    //override
+  } //printUnresolvedLocalVariables
 
   void Node::calcMaxDepth(u32& depth, u32& maxdepth, s32 base)
   {
@@ -567,19 +583,20 @@ namespace MFM {
     UTI vuti = uvpass.getUlamValueTypeIdx();
     if(m_state.isPtr(vuti))
       vuti = uvpass.getPtrTargetType();
+    UlamType * vut = m_state.getUlamTypeByIndex(vuti);
 
     m_state.indent(fp);
     fp->write("const ");
     fp->write(tmpStorageTypeForRead(vuti, uvpass).c_str());
     fp->write(" ");
-    fp->write(m_state.getTmpVarAsString(vuti, tmpVarNum2).c_str());
+    fp->write(m_state.getTmpVarAsString(vuti, tmpVarNum2, vut->getTmpStorageTypeForTmpVar()).c_str());
     fp->write(" = ");
 
     fp->write(m_state.getTmpVarAsString(vuti, tmpVarNum, uvpass.getPtrStorage()).c_str());
     fp->write(".read();\n");
 
     //update uvpass
-    uvpass = UlamValue::makePtr(tmpVarNum2, TMPREGISTER, vuti, m_state.determinePackable(vuti), m_state, 0); //POS 0 justified (atom-based).
+    uvpass = UlamValue::makePtr(tmpVarNum2, vut->getTmpStorageTypeForTmpVar(), vuti, m_state.determinePackable(vuti), m_state, 0); //POS 0 justified (atom-based).
 
     m_state.m_currentObjSymbolsForCodeGen.clear();
   } //genCodeReadAutorefIntoATmpVar
@@ -612,12 +629,10 @@ namespace MFM {
     UTI cosuti = cos->getUlamTypeIdx();
     UlamType * cosut = m_state.getUlamTypeByIndex(cosuti);
     ULAMTYPE cosetype = cosut->getUlamTypeEnum();
-    UTI	scalarcosuti = m_state.getUlamTypeAsScalar(cosuti);
+    UTI	scalarcosuti = m_state.getUlamTypeAsScalar(cosuti); //ALT_ARRAYITEM
     scalarcosuti = m_state.getUlamTypeAsDeref(scalarcosuti);
     UlamType * scalarcosut = m_state.getUlamTypeByIndex(scalarcosuti);
-
-    STORAGE cstor = ((scalarcosut->getUlamClass() == UC_ELEMENT) || m_state.isAtom(scalarcosuti)) ? TMPBITVAL : TMPREGISTER;
-
+    STORAGE cstor = scalarcosut->getTmpStorageTypeForTmpVar();
     u32 itemlen = cosut->getBitSize();
 
     m_state.indent(fp);
@@ -646,8 +661,7 @@ namespace MFM {
 	if(cosetype == Class)
 	  {
 	    fp->write("&");
-	    fp->write(scalarcosut->getUlamTypeMangledName().c_str()); //effself
-	    fp->write("<EC>::THE_INSTANCE");
+	    fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalarcosuti).c_str());
 	  }
 	else
 	  fp->write("NULL"); //primitive eff self
@@ -691,8 +705,7 @@ namespace MFM {
 	    if(cosetype == Class)
 	      {
 		fp->write("&");
-		fp->write(scalarcosut->getUlamTypeMangledName().c_str()); //effself
-		fp->write("<EC>::THE_INSTANCE");
+		fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalarcosuti).c_str());
 	      }
 	    else
 	      fp->write("NULL"); //primitive eff self
@@ -794,7 +807,6 @@ namespace MFM {
     UTI ruti = ruvpass.getUlamValueTypeIdx();
     assert(m_state.isPtr(ruti)); //terminals handled in NodeTerminal
     ruti = ruvpass.getPtrTargetType();
-    UlamType * rut = m_state.getUlamTypeByIndex(ruti);
 
     // here, cos is symbol used to determine read method: either self or last of cos.
     // stgcos is symbol used to determine first "hidden" arg
@@ -867,8 +879,14 @@ namespace MFM {
     //VALUE TO BE WRITTEN:
     // with immediate quarks, they are read into a tmpreg as other immediates
     // with immediate elements, too! value is not a terminal
-    STORAGE rstor = rut->getUlamClass() == UC_QUARK ? TMPREGISTER : ruvpass.getPtrStorage();
+    STORAGE rstor = ruvpass.getPtrStorage();
     fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), rstor).c_str());
+    if(rstor == TMPBITVAL)
+      {
+	fp->write(".");
+	fp->write(readMethodForCodeGen(ruti, ruvpass).c_str()); //or just 'Read' ?
+	fp->write("()");
+      }
     fp->write(");\n");
 
     // inheritance cast needs the lhs type restored after the generated write
@@ -906,6 +924,13 @@ namespace MFM {
     fp->write(writeMethodForCodeGen(luti, luvpass).c_str());
     fp->write("(");
     fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+    if(ruvpass.getPtrStorage() == TMPBITVAL)
+      {
+	fp->write(".");
+	fp->write(readMethodForCodeGen(ruti, ruvpass).c_str()); //or just 'Read' ?
+	fp->write("()");
+      }
+
     fp->write(");\n");
 
     // inheritance cast needs the lhs type restored after the generated write
@@ -942,6 +967,12 @@ namespace MFM {
 
     //VALUE TO BE WRITTEN:
     fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+    if(ruvpass.getPtrStorage() == TMPBITVAL)
+      {
+	fp->write(".");
+	fp->write(readMethodForCodeGen(ruti, ruvpass).c_str()); //or just 'Read' ?
+	fp->write("()");
+      }
     fp->write("); //write into atomof ref\n ");
 
     m_state.m_currentObjSymbolsForCodeGen.clear();
@@ -953,6 +984,8 @@ namespace MFM {
     //cos tell us where to go within the selected member
     s32 tmpVarNum = luvpass.getPtrSlotIndex();
     UTI luti = luvpass.getPtrTargetType();
+    UTI ruti = ruvpass.getPtrTargetType();
+
     m_state.indent(fp);
     fp->write(m_state.getTmpVarAsString(luti, tmpVarNum, TMPAUTOREF).c_str());
     fp->write(".");
@@ -961,7 +994,13 @@ namespace MFM {
     //VALUE TO BE WRITTEN:
     // with immediate quarks, they are read into a tmpreg as other immediates
     // with immediate elements, too! value is not a terminal
-    fp->write(m_state.getTmpVarAsString(ruvpass.getPtrTargetType(), ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+    fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+    if(ruvpass.getPtrStorage() == TMPBITVAL)
+      {
+	fp->write(".");
+	fp->write(readMethodForCodeGen(ruti, ruvpass).c_str()); //or just 'Read' ?
+	fp->write("()");
+      }
     fp->write(");\n");
     m_state.m_currentObjSymbolsForCodeGen.clear();
   } //genCodeWriteToAutorefFromATmpVar
@@ -1045,9 +1084,8 @@ namespace MFM {
     UTI cosuti = cos->getUlamTypeIdx();
     UlamType * cosut = m_state.getUlamTypeByIndex(cosuti);
     ULAMTYPE cosetype = cosut->getUlamTypeEnum();
-    UTI	scalarcosuti = m_state.getUlamTypeAsScalar(cosuti);
+    UTI	scalarcosuti = m_state.getUlamTypeAsScalar(cosuti); //ALT_ARRAYITEM
     scalarcosuti = m_state.getUlamTypeAsDeref(scalarcosuti);
-    UlamType * scalarcosut = m_state.getUlamTypeByIndex(scalarcosuti);
 
     u32 itemlen = cosut->getBitSize();
 
@@ -1073,8 +1111,7 @@ namespace MFM {
 	if(cosetype == Class)
 	  {
 	    fp->write("&");
-	    fp->write(scalarcosut->getUlamTypeMangledName().c_str()); //effself
-	    fp->write("<EC>::THE_INSTANCE");
+	    fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalarcosuti).c_str());
 	  }
 	else
 	  fp->write("NULL"); //primitive eff self
@@ -1088,6 +1125,12 @@ namespace MFM {
 	// with immediate quarks, they are read into a tmpreg as other immediates
 	// with immediate elements, too! value not a terminal
 	fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+	if(ruvpass.getPtrStorage() == TMPBITVAL)
+	  {
+	    fp->write(".");
+	    fp->write(readMethodForCodeGen(scalarcosuti, ruvpass).c_str()); //or just 'Read' ?
+	    fp->write("()");
+	  }
 	fp->write(");\n");
       }
     else
@@ -1127,8 +1170,7 @@ namespace MFM {
 	    if(cosetype == Class)
 	      {
 		fp->write("&");
-		fp->write(scalarcosut->getUlamTypeMangledName().c_str()); //effself
-		fp->write("<EC>::THE_INSTANCE");
+		fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalarcosuti).c_str());
 	      }
 	    else
 	      fp->write("NULL"); //primitive eff self
@@ -1140,6 +1182,12 @@ namespace MFM {
 	    // with immediate quarks, they are read into a tmpreg as other immediates
 	    // with immediate elements, too! value not a terminal
 	    fp->write(m_state.getTmpVarAsString(ruti, ruvpass.getPtrSlotIndex(), ruvpass.getPtrStorage()).c_str());
+	    if(ruvpass.getPtrStorage() == TMPBITVAL)
+	      {
+		fp->write(".");
+		fp->write(readMethodForCodeGen(scalarcosuti, ruvpass).c_str()); //or just 'Read' ?
+		fp->write("()");
+	      }
 	    fp->write(");\n");
 	  }
       }
@@ -1294,7 +1342,7 @@ namespace MFM {
 
     // write out immediate tmp BitValue as an intermediate tmpVar
     s32 tmpVarNum2 = m_state.getNextTmpVarNumber();
-    STORAGE tmp2stor = (((vut->getUlamClass() == UC_ELEMENT) || m_state.isAtom(vuti)) ?  TMPBITVAL : TMPREGISTER);
+    STORAGE tmp2stor = vut->getTmpStorageTypeForTmpVar();
 
     m_state.indent(fp);
     fp->write("const ");
@@ -1436,9 +1484,7 @@ namespace MFM {
 	  assert(0);
 
 	fp->write(", &");
-	UTI derefcosuti = m_state.getUlamTypeAsDeref(scalarcosuti);
-	fp->write(m_state.getUlamTypeByIndex(derefcosuti)->getUlamTypeMangledName().c_str()); //effself
-	fp->write("<EC>::THE_INSTANCE");
+	fp->write(m_state.getEffectiveSelfMangledNameByIndex(scalarcosuti).c_str());
 	cosuti = scalarcosuti; //for the uvpass
       }
     fp->write(");\n");
@@ -1609,13 +1655,6 @@ namespace MFM {
 	    else if(m_state.isARefTypeOfUlamType(nuti, tobeType))
 	      {
 		//cast ref to deref type
-		rtnNode = new NodeCast(node, tobeType, NULL, m_state);
-		assert(rtnNode);
-		rtnNode->setNodeLocation(getNodeLocation());
-		rtnNode->updateLineage(getNodeNo());
-	      }
-	    else if(m_state.isARefTypeOfUlamType(tobeType, nuti))
-	      {
 		//cast non-ref to its ref type; constants & funccalls
 		// not legal for initialization; ok for assignment.
 		rtnNode = new NodeCast(node, tobeType, NULL, m_state);
@@ -1626,23 +1665,12 @@ namespace MFM {
 	    else
 	      doErrMsg = true;
 	  }
-	  else
-	  {
-	    Token identTok;
-	    u32 castId = m_state.m_pool.getIndexForDataString("toInt");
-	    identTok.init(TOK_IDENTIFIER, getNodeLocation(), castId);
+	else
+	  rtnNode = buildToIntCastingNode(node);
 
-	    //fill in func symbol during type labeling;
-	    Node * fcallNode = new NodeFunctionCall(identTok, NULL, m_state);
-	    assert(fcallNode);
-	    fcallNode->setNodeLocation(identTok.m_locator);
-	    Node * mselectNode = new NodeMemberSelect(node, fcallNode, m_state);
-	    assert(mselectNode);
-	    mselectNode->setNodeLocation(identTok.m_locator);
-	    rtnNode = mselectNode; //replace right node with new branch
-	  }
-
-	  //redo check and type labeling; error msg if not same
+	//redo check and type labeling; error msg if not same
+	//e.g. t3191 missing function symbol without c&l
+#if 1
 	  if(!doErrMsg)
 	    {
 	      UTI newType = rtnNode->checkAndLabelType();
@@ -1650,6 +1678,7 @@ namespace MFM {
 	      if(doErrMsg)
 		return makeCastingNode(rtnNode, tobeType, rtnNode, false); //recurse
 	    }
+#endif
       }
     else if (nclasstype == UC_ELEMENT)
       {
@@ -1664,7 +1693,7 @@ namespace MFM {
 	    UTI newType = rtnNode->checkAndLabelType();
 	    doErrMsg = (UlamType::compareForMakingCastingNode(newType, tobeType, m_state) == UTIC_NOTSAME);
 	  }
-	else if((UlamType::compareForMakingCastingNode(tobeType, UAtom, m_state) != UTIC_SAME))
+	else if(!( m_state.isAtom(tobeType) || (tobe->getUlamTypeEnum() == Class)))
 	  doErrMsg = true;
 	else
 	  {
@@ -1805,17 +1834,7 @@ namespace MFM {
 	m_state.m_currentFunctionBlockMaxDepth = 0;
 
 	/* like a typical quark toInt cast expression */
-	u32 tointId = m_state.m_pool.getIndexForDataString("toInt");
-	Token castidentTok(TOK_IDENTIFIER, loc, tointId);
-
-	//fill in func symbol during type labeling;
-	Node * fcallNode = new NodeFunctionCall(castidentTok, NULL, m_state);
-	assert(fcallNode);
-	fcallNode->setNodeLocation(loc);
-	Node * mselectNode = new NodeMemberSelect(argIdentNode, fcallNode, m_state);
-	assert(mselectNode);
-	mselectNode->setNodeLocation(loc);
-
+	Node * mselectNode = buildToIntCastingNode(argIdentNode);
 	//the body: single statement return arg.toInt();
 	NodeReturnStatement * returnNode =  new NodeReturnStatement(mselectNode, m_state);
 	assert(returnNode);
@@ -1844,6 +1863,22 @@ namespace MFM {
 
     return rtnNode;
   } //buildCastingFunctionCallNode
+
+  Node * Node::buildToIntCastingNode(Node * node)
+  {
+    Token identTok;
+    u32 castId = m_state.m_pool.getIndexForDataString("toInt");
+    identTok.init(TOK_IDENTIFIER, getNodeLocation(), castId);
+
+    //fill in func symbol during type labeling;
+    Node * fcallNode = new NodeFunctionCall(identTok, NULL, m_state);
+    assert(fcallNode);
+    fcallNode->setNodeLocation(identTok.m_locator);
+    Node * mselectNode = new NodeMemberSelect(node, fcallNode, m_state);
+    assert(mselectNode);
+    mselectNode->setNodeLocation(identTok.m_locator);
+    return mselectNode; //replace right node with new branch
+  } //buildToIntCastingNode
 
   bool Node::warnOfNarrowingCast(UTI nodeType, UTI tobeType)
   {
@@ -1878,6 +1913,7 @@ namespace MFM {
 
     UTI cosclassuti = cos->getDataMemberClass();
     UlamType * cosclassut = m_state.getUlamTypeByIndex(cosclassuti);
+    assert(!cosclassut->isReference());
 
     fp->write("UlamRef<EC>("); //wrapper for dm
     fp->write(m_state.getHiddenArgName()); //ur first arg
@@ -1889,8 +1925,7 @@ namespace MFM {
     if(cosut->getUlamTypeEnum() == Class)
       {
 	fp->write("&");
-	fp->write(cosclassut->getUlamTypeMangledName().c_str()); //effself
-	fp->write("<EC>::THE_INSTANCE");
+	fp->write(m_state.getEffectiveSelfMangledNameByIndex(cosclassuti).c_str());
       }
     else
       fp->write("NULL"); //primitive eff self
@@ -1923,9 +1958,8 @@ namespace MFM {
 
     if(stgclasstype == UC_ELEMENT)
       {
-	fp->write(stgcosut->getUlamTypeMangledName().c_str());
-	fp->write("<EC>::");
-	fp->write("THE_INSTANCE.");
+	fp->write(m_state.getEffectiveSelfMangledNameByIndex(stgcosuti).c_str());
+	fp->write(".");
       }
     else
       assert(0);
@@ -1952,8 +1986,6 @@ namespace MFM {
       stgcos = m_state.m_currentObjSymbolsForCodeGen[epi - 1]; //***
 
     UTI stgcosuti = stgcos->getUlamTypeIdx();
-    UlamType * stgcosut = m_state.getUlamTypeByIndex(stgcosuti);
-
     Symbol * cos = m_state.m_currentObjSymbolsForCodeGen.back();
     UTI cosuti = cos->getUlamTypeIdx();
 
@@ -1965,8 +1997,7 @@ namespace MFM {
     if(m_state.isClassACustomArray(cosuti))
       fp->write("uc, "); //not for regular READs and WRITEs
 
-    fp->write(stgcosut->getUlamTypeMangledName().c_str());
-    fp->write("<EC>::THE_INSTANCE");
+    fp->write(m_state.getEffectiveSelfMangledNameByIndex(stgcosuti).c_str());
     fp->write(".");
 
     // the MP (only primitive!, no longer quark or element):
@@ -2001,8 +2032,9 @@ namespace MFM {
     assert(m_state.isComplete(caclassuti) || m_state.isClassATemplate(caclassuti));
 
     UlamType * caclassut = m_state.getUlamTypeByIndex(caclassuti);
-    fp->write(caclassut->getUlamTypeMangledName().c_str());
-    fp->write("<EC>::THE_INSTANCE.");
+    assert(!caclassut->isReference());
+    fp->write(m_state.getEffectiveSelfMangledNameByIndex(caclassuti).c_str());
+    fp->write(".");
   } //genCustomArrayMemberNameOfMethod
 
   void Node::genCustomArrayHiddenArgs(File * fp, u32 urtmpnum)
@@ -2041,6 +2073,7 @@ namespace MFM {
     UTI stgcosuti = stgcos->getUlamTypeIdx();
     UTI cosuti = cos->getUlamTypeIdx();
     UlamType * cosut = m_state.getUlamTypeByIndex(cosuti);
+    //    assert(!cosut->isReference()); could be  t3653
 
     // first "hidden" arg is the context, then
     //"hidden" self (atom) arg
@@ -2057,8 +2090,9 @@ namespace MFM {
 	    hiddenarg2 << m_state.getHiddenArgName(); //ur
 	    hiddenarg2 << ", " << Node::calcPosOfCurrentObjectClasses(); //relative off;
 	    hiddenarg2 << "u, " << cosut->getTotalBitSize(); //len
-	    hiddenarg2 << "u, &" << cosut->getUlamTypeMangledName().c_str();
-	    hiddenarg2 << "<EC>::THE_INSTANCE);";
+	    hiddenarg2 << "u, &";
+	    hiddenarg2 << m_state.getEffectiveSelfMangledNameByIndex(cosuti).c_str();
+	    hiddenarg2 << ");";
 	  }
       }
     else
@@ -2076,8 +2110,9 @@ namespace MFM {
 	    hiddenarg2 << stgcos->getMangledName().c_str();
 	    hiddenarg2 << ", " << Node::calcPosOfCurrentObjectClasses(); //relative off;
 	    hiddenarg2 << "u, " << cosut->getTotalBitSize(); //len
-	    hiddenarg2 << "u, &" << cosut->getUlamTypeMangledName().c_str();
-	    hiddenarg2 << "<EC>::THE_INSTANCE);";
+	    hiddenarg2 << "u, &";
+	    hiddenarg2 << m_state.getEffectiveSelfMangledNameByIndex(cosuti).c_str();
+	    hiddenarg2 << ");";
 	  }
 	else
 	  {
@@ -2097,8 +2132,9 @@ namespace MFM {
 	      hiddenarg2 << "0";
 
 	    hiddenarg2 << "u, " << derefut->getTotalBitSize(); //len
-	    hiddenarg2 << "u, &" << derefut->getUlamTypeMangledName().c_str(); //effself
-	    hiddenarg2 << "<EC>::THE_INSTANCE);";
+	    hiddenarg2 << "u, &";
+	    hiddenarg2 << m_state.getEffectiveSelfMangledNameByIndex(stgcosuti).c_str();
+	    hiddenarg2 << ");";
 	  }
       }
 
@@ -2148,6 +2184,7 @@ namespace MFM {
     UTI cosclassuti = cos->getDataMemberClass();
     assert(cosclassuti != Nouti);
     UlamType * cosclassut = m_state.getUlamTypeByIndex(cosclassuti);
+    assert(!cosclassut->isReference());
 
     fp->write("UlamRef<EC>("); //wrapper for local storage
     fp->write(stgcos->getMangledName().c_str()); //an UlamRefFixed
@@ -2159,8 +2196,7 @@ namespace MFM {
     if(cosut->getUlamTypeEnum() == Class)
       {
 	fp->write("&");
-	fp->write(cosclassut->getUlamTypeMangledName().c_str()); //effself
-	fp->write("<EC>::THE_INSTANCE");
+	fp->write(m_state.getEffectiveSelfMangledNameByIndex(cosclassuti).c_str());
       }
     else
       fp->write("NULL"); //primitive eff self
@@ -2191,9 +2227,8 @@ namespace MFM {
     assert(!hazyKin);
 
     UTI futi = fnsymptr->getDataMemberClass();
-    UlamType * fut = m_state.getUlamTypeByIndex(futi);
-    fp->write(fut->getUlamTypeMangledName().c_str());
-    fp->write("<EC>::THE_INSTANCE.");
+    fp->write(m_state.getEffectiveSelfMangledNameByIndex(futi).c_str());
+    fp->write(".");
   } //genCustomArrayLocalMemberNameOfMethod
 
   const std::string Node::localStorageTypeAsString(UTI nuti)

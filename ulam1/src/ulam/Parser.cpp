@@ -351,7 +351,7 @@ namespace MFM {
     //automatically create a Self typedef symbol for this class type
     u32 selfid = m_state.m_pool.getIndexForDataString("Self");
     Token selfTok(TOK_TYPE_IDENTIFIER, identTok.m_locator, selfid);
-    SymbolTypedef * symtypedef = new SymbolTypedef(selfTok, utype, utype, m_state);
+    SymbolTypedef * symtypedef = new SymbolTypedef(selfTok, utype, utype, m_state); //refselftype
     m_state.addSymbolToCurrentScope(symtypedef);
 
     //need class block's ST before parsing any class parameters (i.e. named constants);
@@ -1739,7 +1739,13 @@ namespace MFM {
 	UTI cuti = parseClassArguments(pTok, isAClassType); //not sure what to do with the UTI? could be a declref type
 	if(isAClassType)
 	  {
-	    if(m_state.isScalar(cuti))
+	    if(m_state.isReference(cuti)) //e.g. refofSelf
+	      {
+		typeargs.m_classInstanceIdx = m_state.getUlamTypeAsDeref(cuti);
+		typeargs.m_declRef = ALT_REF;
+		typeargs.m_referencedUTI = typeargs.m_classInstanceIdx;
+	      }
+	    else if(m_state.isScalar(cuti))
 	      typeargs.m_classInstanceIdx = cuti;
 	    else
 	      typeargs.m_classInstanceIdx = m_state.getUlamTypeAsScalar(cuti); //eg typedef class array
@@ -1749,6 +1755,8 @@ namespace MFM {
 	    if(m_state.isScalar(cuti))
 	      typeargs.m_declListOrTypedefScalarType = cuti; //this is what we wanted..
 	    //else arraytype???
+
+	    //DEREF'd cuti?
 	    castUTI = cuti; //unless a dot is next
 	  }
 	typeNode = new NodeTypeDescriptor(typeargs.m_typeTok, cuti, m_state);
@@ -1809,8 +1817,9 @@ namespace MFM {
     getNextToken(pTok);
     if(pTok.m_type != TOK_OPEN_PAREN)
       {
-	//regular class, not a template
+	//regular class, not a template, OR Self
 	unreadToken();
+
 	SymbolClassName * cnsym = NULL;
 	if(!m_state.alreadyDefinedSymbolClassName(typeTok.m_dataindex, cnsym))
 	  {
@@ -1818,7 +1827,7 @@ namespace MFM {
 	    UTI tduti = Nav;
 	    UTI tdscalaruti = Nouti;
 	    if(m_state.getUlamTypeByTypedefName(typeTok.m_dataindex, tduti, tdscalaruti))
-	      return tduti; //done. (could be an array)
+	      return tduti; //done. (could be an array; or refselftype)
 	    else
 	      {
 		// not necessarily a class!!
@@ -3469,7 +3478,6 @@ namespace MFM {
     if(args.m_declRef == ALT_REF)
       {
 	getNextToken(eTok);
-	//if(getExpectedToken(TOK_IDENTIFIER, eTok))
 	if(eTok.m_type == TOK_IDENTIFIER)
 	  {
 	    Node * rightNode = parseIdentExpr(eTok); //parseLvalExpr(eTok);
@@ -3495,8 +3503,26 @@ namespace MFM {
 		std::ostringstream msg;
 		msg << "Value of instanceof reference type ";
 		msg << eTok.getTokenStringFromPool(&m_state).c_str();
-		msg << " is missing for ";
-		msg << identTok.getTokenStringFromPool(&m_state).c_str();
+		msg << " is missing for '";
+		//msg << identTok.getTokenStringFromPool(&m_state).c_str();
+		msg << m_state.getTokenDataAsString(&identTok).c_str() << "'";
+		MSG(&eTok, msg.str().c_str(), ERR);
+	      }
+	    else
+	      {
+		((NodeVarRef *) dNode)->setInitExpr(rightNode);
+	      }
+	  }
+	else if(eTok.m_type == TOK_OPEN_PAREN)
+	  {
+	    //allows casting of reference initialization
+	    Node * rightNode = parseRestOfCastOrExpression();
+	    if(!rightNode)
+	      {
+		std::ostringstream msg;
+		msg << "Value of casted reference type ";
+		msg << " is missing for '";
+		msg << m_state.getTokenDataAsString(&identTok).c_str() << "'";
 		MSG(&eTok, msg.str().c_str(), ERR);
 	      }
 	    else
@@ -3645,7 +3671,6 @@ namespace MFM {
     //this is a block with its own ST
     NodeBlockClass * currClassBlock = m_state.getClassBlock();
     NodeBlock * prevBlock = m_state.getCurrentBlock();
-    //assert(prevBlock == currClassBlock);
     if(prevBlock != currClassBlock)
       {
 	std::ostringstream msg;
@@ -3718,9 +3743,8 @@ namespace MFM {
     u32 selfid = m_state.m_pool.getIndexForDataString("self");
     UTI cuti = currClassBlock->getNodeType(); //luckily we know this now for each class used
     Token selfTok(TOK_IDENTIFIER, identTok.m_locator, selfid);
-    //SymbolVariableStack * selfsym = new SymbolVariableStack(selfTok, m_state.getUlamTypeAsRef(cuti, ALT_REF), m_state.m_currentFunctionBlockDeclSize, m_state);
-    //selfsym->setAutoLocalType(ALT_REF);
-    SymbolVariableStack * selfsym = new SymbolVariableStack(selfTok, cuti, m_state.m_currentFunctionBlockDeclSize, m_state);
+    SymbolVariableStack * selfsym = new SymbolVariableStack(selfTok, m_state.getUlamTypeAsRef(cuti, ALT_REF), m_state.m_currentFunctionBlockDeclSize, m_state);
+    selfsym->setAutoLocalType(ALT_REF);
     selfsym->setIsSelf();
     m_state.addSymbolToCurrentScope(selfsym); //ownership goes to the block
 
@@ -4107,40 +4131,14 @@ namespace MFM {
 	  {
 	    if(asymptr)
 	      {
-		u32 asymid = asymptr->getId();
+		u32 asymid = asymptr->getId(); //Self and Super no longer exceptions
 		UTI auti = asymptr->getUlamTypeIdx();
-		if((asymid == m_state.m_pool.getIndexForDataString("Self")) && (auti == m_state.getCompileThisIdx()))
-		  {
-		    //special case 'Self' typedef that's also defined sometimes by the ulam programmer
-		    std::ostringstream msg;
-		    msg << m_state.m_pool.getDataAsString(asymid).c_str();
-		    msg << " has a previous declaration as '";
-		    msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
-		    msg << " " << m_state.m_pool.getDataAsString(asymid);
-		    msg << "' and is a redundant typedef";
-		    MSG(&args.m_typeTok, msg.str().c_str(), INFO);
-		    aok = true; //not a problem
-		  }
-		else if((asymid == m_state.m_pool.getIndexForDataString("Super")) && (auti == m_state.isClassASubclass(m_state.getCompileThisIdx())))
-		  {
-		    //special case 'Super' typedef that's also sometimes defined by the ulam programmer
-		    std::ostringstream msg;
-		    msg << m_state.m_pool.getDataAsString(asymid).c_str();
-		    msg << " has a previous declaration as '";
-		    msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
-		    msg << "' and is a redundant typedef";
-		    MSG(&args.m_typeTok, msg.str().c_str(), INFO);
-		    aok = true; //not a problem
-		  }
-		else
-		  {
-		    std::ostringstream msg;
-		    msg << m_state.m_pool.getDataAsString(asymid).c_str();
-		    msg << " has a previous declaration as '";
-		    msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
-		    msg << "' and cannot be used as a typedef";
-		    MSG(&args.m_typeTok, msg.str().c_str(), ERR);
-		  }
+		std::ostringstream msg;
+		msg << m_state.m_pool.getDataAsString(asymid).c_str();
+		msg << " has a previous declaration as '";
+		msg << m_state.getUlamTypeNameBriefByIndex(auti).c_str();
+		msg << "' and cannot be used as a typedef";
+		MSG(&args.m_typeTok, msg.str().c_str(), ERR);
 	      }
 	    else
 	      {
@@ -4821,7 +4819,7 @@ namespace MFM {
   Node * Parser::makeCastNode(Token typeTok)
   {
     Node * rtnNode = NULL;
-    UTI typeToBe = Nav;
+    UTI typeToBe = Nouti;
     TypeArgs typeargs;
     typeargs.init(typeTok);
 
@@ -4830,7 +4828,18 @@ namespace MFM {
     NodeTypeDescriptor * typeNode = parseTypeDescriptor(typeargs, typeToBe, false);
     assert(typeNode);
 
-    if(getExpectedToken(TOK_CLOSE_PAREN))
+    Token eTok;
+    getNextToken(eTok);
+    if(eTok.m_type == TOK_AMP)
+      {
+	UTI refuti = m_state.getUlamTypeAsRef(typeNode->givenUTI());
+	typeargs.m_declRef = ALT_REF;
+	typeNode->setReferenceType(ALT_REF, typeNode->givenUTI(), refuti);
+	typeargs.m_referencedUTI = typeNode->getReferencedUTI(); //typeNode->givenUTI();
+	getNextToken(eTok);
+      }
+
+    if(eTok.m_type == TOK_CLOSE_PAREN)
       {
 	//typeNode tfrs to owner to NodeCast
 	Node * nodetocast = parseFactor();

@@ -32,7 +32,8 @@ namespace MFM {
 
   bool UlamTypeClass::isPrimitiveType()
   {
-    return isNumericType();
+    //return isNumericType();
+    return false;
   }
 
   bool UlamTypeClass::cast(UlamValue & val, UTI typidx)
@@ -135,6 +136,13 @@ namespace MFM {
 	    if(m_state.isClassASubclassOf(fmderef, cuti))
 	      return CAST_CLEAR; //casting ref to a super class (may also be ref)
 
+	    if(m_state.isClassASubclassOf(cuti, fmderef))
+	      {
+		if(m_state.isReference(typidx))
+		  return CAST_CLEAR; //casting super ref to a sub class is ok
+		return CAST_BAD; //only refs
+	      }
+
 	    //ref of this class, applies to entire arrays too
 	    UTI anyUTI = Nouti;
 	    AssertBool anyDefined = m_state.anyDefinedUTI(m_key, anyUTI);
@@ -145,16 +153,44 @@ namespace MFM {
 	      return CAST_CLEAR;
 	    else if(cmpr2 == UTIC_DONTKNOW)
 	      return CAST_HAZY;
-
-	    ULAMTYPECOMPARERESULTS cmpr3 = m_state.isARefTypeOfUlamType(anyUTI, typidx);
-	    if(cmpr3 == UTIC_SAME)
-	      return CAST_CLEAR;
-	    else if(cmpr3 == UTIC_DONTKNOW)
-	      return CAST_HAZY;
 	  }
       }
     return CAST_BAD; //e.g. (typidx == UAtom)
   } //safeCast
+
+  FORECAST UlamTypeClass::explicitlyCastable(UTI typidx)
+  {
+    FORECAST scr = UlamType::explicitlyCastable(typidx); //default, arrays checked
+    if(scr == CAST_CLEAR)
+      {
+	UlamType * fmut = m_state.getUlamTypeByIndex(typidx);
+	ULAMTYPE fetyp = fmut->getUlamTypeEnum();
+	//no casting from primitive to class; but from atom/atomref to class may be fine
+	if((fetyp != Class) || m_state.isAtom(typidx))
+	  return CAST_BAD;
+	else if(m_state.isAtom(typidx))
+	  return CAST_CLEAR;
+
+	//check when casting from class to class
+	bool isfmref = fmut->isReference();
+	UTI fmderef = m_state.getUlamTypeAsDeref(typidx);
+	u32 cuti = m_key.getUlamKeyTypeSignatureClassInstanceIdx(); //our scalar as nonref "new"
+	if(m_state.isClassASubclassOf(cuti, fmderef))
+	  {
+	    //casting fm super to sub..only if fm is a ref
+	    if(!isfmref)
+	      scr = CAST_BAD;
+	  }
+	else if(m_state.isClassASubclassOf(fmderef, cuti))
+	  {
+	    // cast fm sub to super, ok!
+	  }
+	else if(UlamType::compare(fmderef, cuti, m_state) != UTIC_SAME)
+	  scr = CAST_BAD;
+	//else what if array???
+      }
+    return scr;
+  } //explicitlyCastable
 
   const char * UlamTypeClass::getUlamTypeAsSingleLowercaseLetter()
   {
@@ -465,6 +501,13 @@ namespace MFM {
       assert(0);
     return ctype.str();
   } //getLocalStorageTypeAsString
+
+  STORAGE UlamTypeClass::getTmpStorageTypeForTmpVar()
+  {
+    if(getUlamClass() == UC_ELEMENT)
+      return TMPTATOM;
+    return UlamType::getTmpStorageTypeForTmpVar();
+  } //getTmpStorageTypeForTmpVar
 
   const std::string UlamTypeClass::castMethodForCodeGen(UTI nodetype)
   {
@@ -1133,12 +1176,13 @@ namespace MFM {
     m_state.indent(fp);
     fp->write(mangledName.c_str());
     fp->write("(const ");
-    fp->write(mangledName.c_str());
+    //fp->write(mangledName.c_str());
+    fp->write("UlamRefAtom");
     fp->write("<EC> & arg) : ");
     fp->write("UlamRefAtom<EC>(m_stg, &");
     fp->write("Us::THE_INSTANCE), "); //effself
     fp->write("m_stg(");
-    fp->write("arg.ReadAtom()) { } \n");
+    fp->write("arg.ReadAtom()) { if(arg.GetType() != this->GetType()) FAIL(ILLEGAL_ARGUMENT); } \n");
 
     //default destructor (for completeness)
     m_state.indent(fp);

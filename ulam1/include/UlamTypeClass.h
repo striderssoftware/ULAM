@@ -62,6 +62,8 @@ namespace MFM{
 
     virtual FORECAST safeCast(UTI typidx);
 
+    virtual FORECAST explicitlyCastable(UTI typidx);
+
     virtual const char * getUlamTypeAsSingleLowercaseLetter();
 
     virtual const std::string getUlamTypeVDAsStringForC();
@@ -114,6 +116,8 @@ namespace MFM{
     virtual const std::string getArrayItemTmpStorageTypeAsString();
 
     virtual const std::string getLocalStorageTypeAsString();
+
+    virtual STORAGE getTmpStorageTypeForTmpVar();
 
     virtual const std::string castMethodForCodeGen(UTI nodetype);
 

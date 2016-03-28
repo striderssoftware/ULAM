@@ -130,6 +130,16 @@ namespace MFM {
     return false;
   } //isFunctionCall
 
+  bool NodeStatements::isExplicitReferenceCast()
+  {
+    if(m_node->isExplicitReferenceCast())
+      return true;
+
+    if(m_nodeNext)
+      return m_nodeNext->isExplicitReferenceCast();
+    return false;
+  } //isExplicitReferenceCast
+
   UTI NodeStatements::checkAndLabelType()
   {
     assert(m_node);
@@ -203,6 +213,23 @@ namespace MFM {
     if(m_nodeNext)
       m_nodeNext->packBitsInOrderOfDeclaration(offset);
   } //packBitsInOrderOfDeclaration
+
+  void NodeStatements::printUnresolvedVariableDataMembers()
+  {
+    m_node->printUnresolvedVariableDataMembers(); //updates offset
+
+    if(m_nodeNext)
+      m_nodeNext->printUnresolvedVariableDataMembers();
+  } //printUnresolvedVariableDataMembers
+
+  void NodeStatements::printUnresolvedLocalVariables(u32 fid)
+  {
+    if(m_node)
+      m_node->printUnresolvedLocalVariables(fid); //updates offset
+
+    if(m_nodeNext)
+      m_nodeNext->printUnresolvedLocalVariables(fid);
+  } //printUnresolvedLocalVariables
 
   void NodeStatements::calcMaxDepth(u32& depth, u32& maxdepth, s32 base)
   {

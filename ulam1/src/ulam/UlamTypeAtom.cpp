@@ -29,11 +29,6 @@ namespace MFM {
     return "VD::BITS";
   }
 
-  bool UlamTypeAtom::needsImmediateType()
-  {
-    return true;
-  }
-
   const std::string UlamTypeAtom::getTmpStorageTypeAsString()
   {
     return "T";
@@ -44,6 +39,11 @@ namespace MFM {
     std::ostringstream ctype;
     ctype << getUlamTypeImmediateMangledName() << "<EC>";
     return ctype.str();
+  }
+
+  STORAGE UlamTypeAtom::getTmpStorageTypeForTmpVar()
+  {
+    return TMPTATOM;
   }
 
   bool UlamTypeAtom::isMinMaxAllowed()
@@ -84,18 +84,30 @@ namespace MFM {
     if(scr != CAST_CLEAR)
       return scr;
 
-    UlamType * vut = m_state.getUlamTypeByIndex(typidx);
     if(m_state.isAtom(typidx))
       return CAST_CLEAR; //atom to atom
 
     //casting from quark or quark ref, requires explicit casting
+    UlamType * vut = m_state.getUlamTypeByIndex(typidx);
     return (vut->getUlamClass() == UC_ELEMENT) ? CAST_CLEAR : CAST_BAD;
    } //safeCast
 
   FORECAST UlamTypeAtom::explicitlyCastable(UTI typidx)
   {
-    return safeCast(typidx);
-  }
+    //    return safeCast(typidx);
+    FORECAST scr = UlamType::explicitlyCastable(typidx); //default, arrays checked
+    if(scr == CAST_CLEAR)
+      {
+	UlamType * vut = m_state.getUlamTypeByIndex(typidx);
+	ULAMCLASSTYPE vclasstype = vut->getUlamClass();
+	if(vut->isPrimitiveType())
+	  scr = CAST_BAD;
+	else if(( vclasstype == UC_QUARK) && !vut->isReference())
+	  scr = CAST_BAD; //quark ref possibly ok
+	//else atom, element, quark ref (possibly), are acceptable
+      }
+    return scr;
+  } //explicitlyCastable
 
   const std::string UlamTypeAtom::castMethodForCodeGen(UTI nodetype)
   {

@@ -108,7 +108,14 @@ namespace MFM {
 
   FORECAST UlamType::explicitlyCastable(UTI typidx)
   {
-    return UlamType::safeCast(typidx); //default
+    FORECAST scr = UlamType::safeCast(typidx); //default
+    if(scr == CAST_CLEAR)
+      {
+	// primitives must be the same sizes when casting to a reference type
+	if(isReference() && !checkReferenceCast(typidx))
+	  scr = CAST_BAD;
+      }
+    return scr;
   } //explicitlyCastable
 
   bool UlamType::checkArrayCast(UTI typidx)
@@ -129,7 +136,8 @@ namespace MFM {
 	msg << m_state.getUlamTypeNameBriefByIndex(typidx).c_str();
 	msg << " TO " ;
 	msg << getUlamTypeNameBrief().c_str();
-	if((m_state.isARefTypeOfUlamType(typidx, anyUTI) == UTIC_SAME) || (m_state.isARefTypeOfUlamType(anyUTI, typidx) == UTIC_SAME))
+
+	if((m_state.isARefTypeOfUlamType(typidx, anyUTI) == UTIC_SAME))
 	  MSG(m_state.getFullLocationAsString(m_state.m_locOfNextLineText).c_str(), msg.str().c_str(), DEBUG);
 	else
 	  {
@@ -185,8 +193,8 @@ namespace MFM {
 
     if(key1.getUlamKeyTypeSignatureBitSize() != key2.getUlamKeyTypeSignatureBitSize())
 	  return false;
-    if(alt1 != ALT_NOT || alt2 == ALT_NOT)
-      return false;
+    //if(alt1 != ALT_NOT || alt2 == ALT_NOT)
+    //  return false;
 
     return true; //keys the same, except for reference type
   } //checkReferenceCast
@@ -383,6 +391,12 @@ namespace MFM {
       };
     return ctype;
   } //getTmpStorageTypeAsString
+
+  STORAGE UlamType::getTmpStorageTypeForTmpVar()
+  {
+    //immediate storage is TMPBITVAL for all UlamTypes.
+    return TMPREGISTER;
+  }
 
   const char * UlamType::getUlamTypeAsSingleLowercaseLetter()
   {

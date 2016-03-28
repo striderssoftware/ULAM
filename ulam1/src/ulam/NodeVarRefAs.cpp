@@ -131,7 +131,6 @@ namespace MFM {
     // the uvpass comes from NodeControl, and still has the POS obtained
     // during the condition statement for As..unorthodox, but necessary.
     assert(m_state.isPtr(uvpass.getUlamValueTypeIdx()));
-    //s32 tmpVarPos = uvpass.getPtrSlotIndex();
 
     // before shadowing the lhs of the h/as-conditional variable with its auto,
     // let's load its storage from the currentSelfSymbol:
@@ -150,8 +149,6 @@ namespace MFM {
     fp->write(m_state.getTmpVarAsString(stgcosuti, tmpVarStg, TMPBITVAL).c_str());
     fp->write(" = ");
     fp->write(stgcos->getMangledName().c_str());
-
-    //if(m_varSymbol->getId() != m_state.m_pool.getIndexForDataString("atom")) //not isSelf check; was "self"
     fp->write(".GetStorage()"); //non-const
     fp->write(";\n");
 
@@ -181,8 +178,6 @@ namespace MFM {
       }
     else
       {
-	UTI derefvuti = m_state.getUlamTypeAsDeref(stgcosuti); //was vuti, but that was wrong!!
-	UlamType * derefvut = m_state.getUlamTypeByIndex(derefvuti);
 	if(vclasstype == UC_QUARK)
 	  {
 	    fp->write(", ");
@@ -190,8 +185,7 @@ namespace MFM {
 	    fp->write("u");
 	  }
 	fp->write(", &");
-	fp->write(derefvut->getUlamTypeMangledName().c_str()); //effself
-	fp->write("<EC>::THE_INSTANCE");
+	fp->write(m_state.getEffectiveSelfMangledNameByIndex(stgcosuti).c_str());
       }
     fp->write("); //shadows lhs of 'as'\n");
 

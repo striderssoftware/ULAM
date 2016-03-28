@@ -1,8 +1,8 @@
 /**                                        -*- mode:C++ -*-
  * Node.h - Basic Node of Nodes for ULAM
  *
- * Copyright (C) 2014-2015 The Regents of the University of New Mexico.
- * Copyright (C) 2014-2015 Ackleyshack LLC.
+ * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
+ * Copyright (C) 2014-2016 Ackleyshack LLC.
  *
  * This file is part of the ULAM programming language compilation system.
  *
@@ -29,7 +29,7 @@
   \file Node.h - Basic Node of Nodes for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
-  \date (C) 2014-2015 All rights reserved.
+  \date (C) 2014-2016 All rights reserved.
   \gpl
 */
 
@@ -98,7 +98,7 @@ namespace MFM{
 
     void setNodeType(UTI ut);
 
-    TBOOL getStoreIntoAble();
+    virtual TBOOL getStoreIntoAble();
 
     void setStoreIntoAble(TBOOL s);
 
@@ -117,6 +117,8 @@ namespace MFM{
     virtual bool isReadyConstant();
 
     virtual bool isFunctionCall();
+
+    virtual bool isExplicitReferenceCast(); //only NodeCast may return true
 
     virtual FORECAST safeToCastTo(UTI newType);
 
@@ -150,6 +152,10 @@ namespace MFM{
 
     virtual void packBitsInOrderOfDeclaration(u32& offset);
 
+    virtual void printUnresolvedVariableDataMembers();
+
+    virtual void printUnresolvedLocalVariables(u32 fid);
+
     virtual void calcMaxDepth(u32& depth, u32& maxdepth, s32 base);
 
     virtual void genCode(File * fp, UlamValue& uvpass);
@@ -173,7 +179,7 @@ namespace MFM{
 
     CompilerState & m_state;  //for printing error messages with path
 
-    bool checkSafeToCastTo(UTI fromType, UTI& newType);
+    virtual bool checkSafeToCastTo(UTI fromType, UTI& newType);
 
     bool makeCastingNode(Node * node, UTI tobeType, Node*& rtnNode, bool isExplicit = false);
 
@@ -232,15 +238,16 @@ namespace MFM{
 
     void restoreElementTypeForAncestorCasting(File * fp, UlamValue & uvpass);
 
+    //common helpers for safe casting
+    NodeFunctionCall * buildCastingFunctionCallNode(Node * node, UTI tobeType);
+    Node * buildToIntCastingNode(Node * node);
+
   private:
     TBOOL m_storeIntoAble;
     UTI m_utype;
     Locator m_loc;
     NNO m_parentNo;
     NNO m_no;
-
-    //common helpers for safe casting
-    NodeFunctionCall * buildCastingFunctionCallNode(Node * node, UTI tobeType);
 
     void genCodeReadSelfIntoATmpVar(File * fp, UlamValue & uvpass);
     void genCodeWriteToSelfFromATmpVar(File * fp, UlamValue& luvpass, UlamValue& ruvpass);
