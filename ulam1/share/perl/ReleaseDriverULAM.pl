@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-print "\n\n  THIS IS THE ulam1 HISTORICAL RELEASE DRIVER SCRIPT\n\n";
+print "\n\n  THIS IS THE ulam1Frozen HISTORICAL RELEASE DRIVER SCRIPT\n\n";
 my $PACKAGE_NAME = "ulam1";
 
 my %steps; sub step { $steps{scalar(keys %steps).". ".$_[0]} = $_[1]; }
@@ -54,7 +54,7 @@ my $ULAM_LANGUAGE_VERSION="ulam1";
 $| = 1;
 my $GIT_URL = "https://github.com/DaveAckley/ULAM.git";
 my $MFM_GIT_URL = "https://github.com/DaveAckley/MFM.git";
-my @DISTROS = ("precise", "trusty");
+my @DISTROS = ("xenial", "precise", "trusty");
 
 use Cwd 'abs_path';
 use File::Basename;
@@ -97,15 +97,15 @@ sub REPO_CHECK_OUT {
     print "Cloning repo $GIT_URL..";
     my $git_clone_output = `git clone $GIT_URL 2>&1`;
     print "done\n";
-    print "Checking out ULAM v1.1.1\n";
-    my $git_checkout_output = `cd ULAM && git checkout v1.1.1`;
+    print "Checking out ULAM ulam1Frozen\n";
+    my $git_checkout_output = `cd ULAM && git checkout ulam1Frozen`;
     print "done\n";
 
     print "Cloning repo $MFM_GIT_URL into ULAM..";
     my $git_mfm_clone_output = `cd ULAM;git clone $MFM_GIT_URL 2>&1`;
     print "done\n";
     print "Checking out MFM v3.1.1\n";
-    my $git_checkout2_output = `cd ULAM/MFM && git checkout v3.1.1`;
+    my $git_checkout2_output = `cd ULAM/MFM && git checkout ulam1Frozen`;
 
     print "Making Makefile.local.mk..";
     `echo 'MFM_ROOT_DIR := \$(ULAM_ROOT_DIR)/../MFM' > ULAM/$ULAM_LANGUAGE_VERSION/Makefile.local.mk`;
