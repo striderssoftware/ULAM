@@ -1,2 +1,2 @@
 #a menu entry would not make sense for a compiler, right?
-#?package(ulam):needs="text" section="Applications/Programming" title="ULAM Compiler" command="/usr/bin/ulam"
+#?package(ulam1):needs="text" section="Applications/Programming" title="ULAM Compiler" command="/usr/bin/ulam1"

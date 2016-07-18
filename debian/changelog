@@ -1,4 +1,4 @@
-ulam (1.0.0) trusty; urgency=low
+ulam1 (1.0.0) trusty; urgency=low
 
   * Initial release: More work heading towards usable debian/ubuntu packaging
 

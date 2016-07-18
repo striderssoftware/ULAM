@@ -1,4 +1,7 @@
 #!/usr/bin/perl -w
+print "\n\n  THIS IS THE ulam1 HISTORICAL RELEASE DRIVER SCRIPT\n\n";
+my $PACKAGE_NAME = "ulam1";
+
 my %steps; sub step { $steps{scalar(keys %steps).". ".$_[0]} = $_[1]; }
 #
 # This script runs as the main event of the ULAM_DISTRO_CREATION_TIME
@@ -94,10 +97,15 @@ sub REPO_CHECK_OUT {
     print "Cloning repo $GIT_URL..";
     my $git_clone_output = `git clone $GIT_URL 2>&1`;
     print "done\n";
+    print "Checking out ULAM v1.1.1\n";
+    my $git_checkout_output = `cd ULAM && git checkout v1.1.1`;
+    print "done\n";
 
     print "Cloning repo $MFM_GIT_URL into ULAM..";
     my $git_mfm_clone_output = `cd ULAM;git clone $MFM_GIT_URL 2>&1`;
     print "done\n";
+    print "Checking out MFM v3.1.1\n";
+    my $git_checkout2_output = `cd ULAM/MFM && git checkout v3.1.1`;
 
     print "Making Makefile.local.mk..";
     `echo 'MFM_ROOT_DIR := \$(ULAM_ROOT_DIR)/../MFM' > ULAM/$ULAM_LANGUAGE_VERSION/Makefile.local.mk`;
@@ -174,7 +182,7 @@ sub TREE_BUILD {
 sub SECOND_EXTRACT {
     print "Extracting files for distribution..";
     my $extractPath = "ULAM/$ULAM_LANGUAGE_VERSION/share/perl/extractDistro.pl";
-    my $distroName = "ulam-$ulam_version_tag";
+    my $distroName = "$PACKAGE_NAME-$ulam_version_tag";
     my $ret = `$extractPath src ULAM $distroName >logs/SECOND_EXTRACT.log 2>&1 || echo \$?`;
     return "Second extract failed ($ret)"
         unless $ret eq "";
@@ -193,31 +201,31 @@ sub SECOND_EXTRACT {
 }
 
 sub DISTRO_BUILD {
-    my $distroName = "ulam-$ulam_version_tag";
+    my $distroName = "$PACKAGE_NAME-$ulam_version_tag";
     my $tarPath = "$distroName.tgz";
 
-    my $cmd = "bzr dh-make --bzr-only ulam $ulam_version_tag $tarPath >logs/DISTRO_BUILD-dhmake.log 2>&1 || echo \$?";
+    my $cmd = "bzr dh-make --bzr-only $PACKAGE_NAME $ulam_version_tag $tarPath >logs/DISTRO_BUILD-dhmake.log 2>&1 || echo \$?";
     print "Running [$cmd]..";
     my $ret = `$cmd`;
     return "[$cmd] failed ($ret)"
         unless $ret eq "";
     print "OK\n";
 
-    my $newppaversion = makeLeximited(incrementFileNumber("$STATE_DIR/ulam-ppaversion"));
+    my $newppaversion = makeLeximited(incrementFileNumber("$STATE_DIR/$PACKAGE_NAME-ppaversion"));
     for my $distro (@DISTROS) {
         print "\n\n------Packaging for $distro------\n";
 
         my $changelogdate = `date +"%a, %d %b %Y %T %z"`;
         chomp($changelogdate);
 
-        my $newdistroversion = makeLeximited(incrementFileNumber("$STATE_DIR/ulam-$distro-version"));
+        my $newdistroversion = makeLeximited(incrementFileNumber("$STATE_DIR/$PACKAGE_NAME-$distro-version"));
         my $debianversion = "$ulam_version_tag-ppa$newppaversion~$distro$newdistroversion";
         print "Updating debian/changelog for $debianversion..";
-        open(LOG,">ulam/debian/changelog") or die "LOG: $!";
+        open(LOG,">$PACKAGE_NAME/debian/changelog") or die "LOG: $!";
         print LOG <<EOF;
-ulam ($debianversion) $distro; urgency=low
+$PACKAGE_NAME ($debianversion) $distro; urgency=low
 
-  * Packaging ulam $ulam_version_tag for $distro
+  * Packaging $PACKAGE_NAME $ulam_version_tag for $distro
 
  -- Dave Ackley <ackley\@ackleyshack.com>  $changelogdate
 EOF
@@ -225,14 +233,14 @@ EOF
         print "done\n";
 
         print "Committing updated debian in bzr..";
-        $cmd = "cd ulam && bzr add debian && bzr commit -m \"Packaging $ulam_version_tag for $distro on $changelogdate\"";
+        $cmd = "cd $PACKAGE_NAME && bzr add debian && bzr commit -m \"Packaging $ulam_version_tag for $distro on $changelogdate\"";
         $ret = `$cmd >../logs/DISTRO_BUILD-update-debian.log 2>&1 || echo \$?`;
         return "[$cmd] failed ($ret)"
             unless $ret eq "";
         print "OK\n";
 
         print "Building source package..";
-        $cmd = "cd ulam;bzr builddeb -S";
+        $cmd = "cd $PACKAGE_NAME;bzr builddeb -S";
         $ret = `$cmd >../logs/DISTRO_BUILD-source-package.log 2>&1 || echo \$?`;
         return "[$cmd] failed ($ret)"
             unless $ret eq "";

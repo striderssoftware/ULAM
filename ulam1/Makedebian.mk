@@ -11,7 +11,7 @@
 # references -- which this way, at least for now, will continue to
 # work.  Then we do symlinks in /usr/bin for the programs.
 
-DEB_COMBINED_ROOT_DIR := $(DESTDIR)/usr/lib/ulam/
+DEB_COMBINED_ROOT_DIR := $(DESTDIR)/usr/lib/ulam1/
 DEB_SYMLINK_BIN_DIR := $(DESTDIR)/usr/bin
 
 install:	FORCE
@@ -20,9 +20,9 @@ install:	FORCE
 
 testinstalled:	FORCE
 	# These should just not die
-	$(DEB_SYMLINK_BIN_DIR)/ulam -V
-	$(DEB_SYMLINK_BIN_DIR)/mfms -v
-	$(DEB_SYMLINK_BIN_DIR)/mfzmake -v
+	$(DEB_SYMLINK_BIN_DIR)/ulam1 -V
+	$(DEB_SYMLINK_BIN_DIR)/mfms1 -v
+	$(DEB_SYMLINK_BIN_DIR)/mfzmake1 -v
 
 include VERSION.mk
 version:	FORCE
