@@ -50,6 +50,8 @@
 #include "UEventWindow.h"
 #include "File.h"
 #include "NodeBlock.h"
+#include "NodeBlockContext.h"
+#include "NodeBlockLocals.h"
 #include "NodeCast.h"
 #include "NodeConstantDef.h"
 #include "NodeReturnStatement.h"
@@ -105,6 +107,10 @@ namespace MFM{
     bool m_linesForDebug;
 
     SymbolTableOfClasses m_programDefST; // holds SymbolClassName and SymbolClassNameTemplate
+
+    std::map<u32, NodeBlockLocals *> m_localsPerFilePath; //holds block of local constants and typedefs
+    bool m_parsingLocalDef; //used for populating m_localsPerFilePath
+    Token m_currentLocalDefToken; //used to identify current file path when m_parsingLocalDef is true
 
     s32 m_currentFunctionBlockDeclSize; //used to calc framestack size for function def
     s32 m_currentFunctionBlockMaxDepth; //framestack saved in NodeBlockFunctionDefinition
@@ -162,6 +168,7 @@ namespace MFM{
 
     void clearAllDefinedUlamTypes();
     void clearAllLinesOfText();
+    void clearAllLocalsPerFilePath();
     void clearCurrentObjSymbolsForCodeGen();
 
     bool getClassNameFromFileName(std::string startstr, u32& compileThisId);
@@ -260,12 +267,16 @@ namespace MFM{
     bool alreadyDefinedSymbolByAncestor(u32 dataindex, Symbol *& symptr, bool& hasHazyKin);
     bool alreadyDefinedSymbol(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isDataMemberIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
+    bool isIdInLocalFileScope(Locator loc, u32 id, Symbol *& symptr);
+
     bool isFuncIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isFuncIdInClassScopeNNO(NNO cnno, u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & symptr, bool& hasHazyKin);
     bool findMatchingFunctionInAncestor(UTI cuti, u32 fid, std::vector<UTI> typeVec, SymbolFunction*& fsymref, UTI& foundInAncestor);
 
+    bool isIdInCurrentScope(u32 id, Symbol *& asymptr);
     void addSymbolToCurrentScope(Symbol * symptr); //ownership goes to the block
+    void addSymbolToLocalScope(Symbol * symptr, Locator loc); //ownership goes to the m_localsPerFilePath ST
     void addSymbolToCurrentMemberClassScope(Symbol * symptr); //making stuff up for member
     void replaceSymbolInCurrentScope(u32 oldid, Symbol * symptr); //same symbol, new id
     void replaceSymbolInCurrentScope(Symbol * oldsym, Symbol * newsym); //same id, new symbol
@@ -303,6 +314,10 @@ namespace MFM{
     /** during type labeling, sets ULAMCLASSTYPE for typedefs that
 	involved incomplete Class types */
     bool completeIncompleteClassSymbolForTypedef(UTI incomplete) ;
+
+    void updateLineageAndFirstCheckAndLabelPass();
+    void updateLineageAndFirstCheckAndLabelPassForLocals();
+    bool checkAndLabelPassForLocals();
 
     /** helper methods for error messaging, uses string pool */
     const std::string getTokenLocationAsString(const Token * tok);
@@ -404,12 +419,25 @@ namespace MFM{
     void clearStructuredCommentToken();
     bool getStructuredCommentToken(Token& scTok);
 
+    /** helpers: local def location and flag for parsing*/
+    void setLocalScopeForParsing(const Token& localTok);
+    void clearLocalScopeForParsing();
+    bool isParsingLocalDef();
+    Locator getLocalScopeLocator();
+    NodeBlockLocals * getLocalScopeBlock(Locator loc);
+    NodeBlockLocals * getLocalScopeBlockByIndex(UTI luti);
+    NodeBlockLocals * getLocalScopeBlockByPathId(u32 pathid);
+    NodeBlockLocals * makeLocalScopeBlock(Locator loc);
+
     /** to identify each node */
     NNO getNextNodeNo();
 
     Node * findNodeNoInThisClass(NNO n);
     Node * findNodeNoInAClass(NNO n, UTI cuti);
     UTI findAClassByNodeNo(NNO n);
+    NodeBlockLocals * findALocalScopeByNodeNo(NNO n);
+    Node * findNodeNoInALocalScope(Locator loc, NNO n);
+
     NodeBlockClass * getAClassBlock(UTI cuti);
     NNO getAClassBlockNo(UTI cuti);
 
@@ -424,15 +452,15 @@ namespace MFM{
 
     NNO getCurrentBlockNo();
 
-    NodeBlockClass * getClassBlock();
+    NodeBlockContext * getContextBlock();
 
-    NNO getClassBlockNo();
+    NNO getContextBlockNo();
 
     bool useMemberBlock();
 
     NodeBlockClass * getCurrentMemberClassBlock();
 
-    void pushClassContext(UTI idx, NodeBlock * currblock, NodeBlockClass * classblock, bool usemember, NodeBlockClass * memberblock);
+    void pushClassContext(UTI idx, NodeBlock * currblock, NodeBlockContext * contextblock, bool usemember, NodeBlockClass * memberblock);
 
     void popClassContext();
 
@@ -456,6 +484,7 @@ namespace MFM{
     bool isPtr(UTI puti);
     bool isAtom(UTI auti);
     bool isAtomRef(UTI auti);
+    bool isAClass(UTI uti);
     bool isASeenClass(UTI cuti);
     bool isAnonymousClass(UTI cuti);
     void saveUrSelf(UTI uti);

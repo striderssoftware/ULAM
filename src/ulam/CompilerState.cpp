@@ -12,6 +12,7 @@
 #include "UlamTypeClassTransient.h"
 #include "UlamTypeInternalHolder.h"
 #include "UlamTypeInternalHzy.h"
+#include "UlamTypeInternalLocalsFileScope.h"
 #include "UlamTypeInternalNav.h"
 #include "UlamTypeInternalNouti.h"
 #include "UlamTypeInternalPtr.h"
@@ -74,7 +75,7 @@ namespace MFM {
   static const char * BUILD_DEFAULT_TRANSIENT_FUNCNAME = "getDefaultTransient";
 
   //use of this in the initialization list seems to be okay;
-  CompilerState::CompilerState(): m_linesForDebug(false), m_programDefST(*this), m_currentFunctionBlockDeclSize(0), m_currentFunctionBlockMaxDepth(0), m_parsingControlLoop(0), m_gotStructuredCommentToken(false), m_parsingConditionalAs(false), m_genCodingConditionalHas(false), m_eventWindow(*this), m_goAgainResolveLoop(false), m_pendingArgStubContext(0), m_currentSelfSymbolForCodeGen(NULL), m_nextTmpVarNumber(0), m_nextNodeNumber(0), m_urSelfUTI(Nouti), m_emptyUTI(Nouti)
+  CompilerState::CompilerState(): m_linesForDebug(false), m_programDefST(*this), m_parsingLocalDef(false), m_currentFunctionBlockDeclSize(0), m_currentFunctionBlockMaxDepth(0), m_parsingControlLoop(0), m_gotStructuredCommentToken(false), m_parsingConditionalAs(false), m_genCodingConditionalHas(false), m_eventWindow(*this), m_goAgainResolveLoop(false), m_pendingArgStubContext(0), m_currentSelfSymbolForCodeGen(NULL), m_nextTmpVarNumber(0), m_nextNodeNumber(0), m_urSelfUTI(Nouti), m_emptyUTI(Nouti)
   {
     m_err.init(this, debugOn, infoOn, warnOn, waitOn, NULL);
     Token::initTokenMap(*this);
@@ -84,6 +85,7 @@ namespace MFM {
   {
     clearAllDefinedUlamTypes();
     clearAllLinesOfText();
+    clearAllLocalsPerFilePath();
     clearCurrentObjSymbolsForCodeGen();
   }
 
@@ -119,9 +121,20 @@ namespace MFM {
 	v->clear();
 	delete v;
       }
-
     m_textByLinePerFilePath.clear();
   } //clearAllLinesOfText
+
+  void CompilerState::clearAllLocalsPerFilePath()
+  {
+    std::map<u32, NodeBlockLocals *>::iterator it;
+
+    for(it = m_localsPerFilePath.begin(); it != m_localsPerFilePath.end(); it++)
+      {
+	NodeBlockLocals * locals = it->second;
+	delete locals;
+      }
+    m_localsPerFilePath.clear();
+  } //clearAllLocalsPerFilePath
 
   void CompilerState::clearCurrentObjSymbolsForCodeGen()
   {
@@ -552,6 +565,9 @@ namespace MFM {
       case Holder:
 	ut = new UlamTypeInternalHolder(key, *this);
 	break;
+      case LocalsFileScope:
+	ut = new UlamTypeInternalLocalsFileScope(key, *this);
+	break;
       default:
 	{
 	  std::ostringstream msg;
@@ -645,6 +661,12 @@ namespace MFM {
   // no side-effects, except to 3rd arg when return is true.
   bool CompilerState::mappedIncompleteUTI(UTI cuti, UTI auti, UTI& mappedUTI)
   {
+    if(!isAClass(cuti))
+      {
+	//a local scope (t3862)
+	return findaUTIAlias(auti, mappedUTI);
+      }
+
     SymbolClass * csym = NULL;
     AssertBool isDefined = alreadyDefinedSymbolClass(cuti, csym);
     assert(isDefined);
@@ -699,6 +721,8 @@ namespace MFM {
 		return (cnsymOfIncomplete->hasMappedUTI(auti, mappedUTI));
 	      }
 	  }
+#if 0
+	//Type is not a Class, e.g. Unsigned, no lookup!
 	else if(aut->isScalar())
 	  {
 	    Symbol * symOfIncomplete = NULL;
@@ -710,6 +734,7 @@ namespace MFM {
 		return true;
 	      }
 	  }
+#endif
 	//else?
       } //not a holder
 
@@ -826,13 +851,17 @@ namespace MFM {
 
   void CompilerState::mapTypesInCurrentClass(UTI fm, UTI to)
   {
+    UTI cuti = getCompileThisIdx();
+    if(!isAClass(cuti))
+      return; //a local def, skip
+
     if(getReferenceType(to) != ALT_NOT)
       return; //only a reference to a class type, skip
 
     SymbolClassName * cnsym = NULL;
     AssertBool isDefined = alreadyDefinedSymbolClassName(getCompileThisId(), cnsym);
     assert(isDefined);
-    cnsym->mapInstanceUTI(getCompileThisIdx(), fm, to);
+    cnsym->mapInstanceUTI(cuti, fm, to);
     //when not a template, the CompileThisId && Idx belong to the same SymbolClassName;
     // o.w. CompileThisIdx belongs to a class instance of the template (not an UTIAlias!).
   } //mapTypesInCurrentClass
@@ -1693,6 +1722,9 @@ namespace MFM {
 
   bool CompilerState::isClassATemplate(UTI cuti)
   {
+    if(!isAClass(cuti))
+      return false;
+
     SymbolClass * csym = NULL;
     AssertBool isDefined = alreadyDefinedSymbolClass(cuti, csym);
     assert(isDefined);
@@ -2008,7 +2040,7 @@ namespace MFM {
 
     NodeBlockClass * classblock = new NodeBlockClass(NULL, *this);
     assert(classblock);
-    classblock->setNodeLocation(cTok.m_locator);
+    //classblock->setNodeLocation(cTok.m_locator); only where first used, not defined!
     classblock->setNodeType(cuti);
 
     //avoid Invalid Read whenconstructing class' Symbol
@@ -2158,6 +2190,79 @@ namespace MFM {
     return rtnB;
   } //completeIncompleteClassSymbolForTypedef
 
+  void CompilerState::updateLineageAndFirstCheckAndLabelPass()
+  {
+    m_programDefST.updateLineageForTableOfClasses(); //+ first c&l
+    updateLineageAndFirstCheckAndLabelPassForLocals();
+  }
+
+  void CompilerState::updateLineageAndFirstCheckAndLabelPassForLocals()
+  {
+    std::map<u32, NodeBlockLocals *>::iterator it;
+    for(it = m_localsPerFilePath.begin(); it != m_localsPerFilePath.end(); it++)
+      {
+	NodeBlockLocals * locals = it->second;
+	assert(locals);
+
+	Locator nloc = locals->getNodeLocation();
+	u32 pathidx = nloc.getPathIndex();
+	u32 nidFromLoc;
+
+	AssertBool isFileName = getClassNameFromFileName(m_pool.getDataAsString(pathidx), nidFromLoc);
+	assert(isFileName);
+
+	//get name-sake class UTI from node loc's path id
+	SymbolClassName * cnsym = NULL;
+	AssertBool isDefined = alreadyDefinedSymbolClassName(nidFromLoc, cnsym);
+	assert(isDefined);
+	NodeBlockClass * cblock = cnsym->getClassBlockNode();
+	assert(cblock);
+
+	UTI cuti = cnsym->getUlamTypeIdx();
+
+	pushClassContext(cuti, locals, cblock, false, NULL);
+
+	locals->updateLineage(0);
+	locals->checkAndLabelType();
+
+	popClassContext(); //restore
+      }
+  } //updateLineageAndFirstCheckAndLabelPassForLocals
+
+  bool CompilerState::checkAndLabelPassForLocals()
+  {
+    clearGoAgain();
+
+    std::map<u32, NodeBlockLocals *>::iterator it;
+    for(it = m_localsPerFilePath.begin(); it != m_localsPerFilePath.end(); it++)
+      {
+	NodeBlockLocals * locals = it->second;
+
+	Locator nloc = locals->getNodeLocation();
+	u32 pathidx = nloc.getPathIndex();
+	u32 nidFromLoc;
+
+	AssertBool isFileName = getClassNameFromFileName(m_pool.getDataAsString(pathidx), nidFromLoc);
+	assert(isFileName);
+
+	//get name-sake class UTI from node loc's path id
+	SymbolClassName * cnsym = NULL;
+	AssertBool isDefined = alreadyDefinedSymbolClassName(nidFromLoc, cnsym);
+	assert(isDefined);
+	NodeBlockClass * cblock = cnsym->getClassBlockNode();
+	assert(cblock);
+
+	UTI cuti = cnsym->getUlamTypeIdx();
+
+	pushClassContext(cuti, locals, cblock, false, NULL);
+
+	locals->checkAndLabelType();
+
+	popClassContext(); //restore
+      }
+    return (!goAgain() && (m_err.getErrorCount() + m_err.getWarningCount() == 0));
+  } //checkAndLabelPassForLocals
+
   bool CompilerState::alreadyDefinedSymbolByAncestor(u32 dataindex, Symbol *& symptr, bool& hasHazyKin)
   {
     //maybe in current class as a holder, which doesn't progress the search (just the opposite, stops it!).
@@ -2229,20 +2334,38 @@ namespace MFM {
 
     //start with the current class block and look up family tree
     //until the 'variable id' is found.
-    NodeBlockClass * classblock = getClassBlock();
+    NodeBlockContext * cblock = getContextBlock();
 
     //substitute another selected class block to search for data member
     if(useMemberBlock())
-      classblock = getCurrentMemberClassBlock();
+      cblock = getCurrentMemberClassBlock();
 
-    while(!brtn && classblock)
+    Locator cloc;
+    if(cblock)
+      cloc = cblock->getNodeLocation(); //to check local scope
+
+    while(!brtn && cblock)
       {
-	brtn = classblock->isIdInScope(dataindex,symptr); //returns symbol
-	hasHazyKin |= checkHasHazyKin(classblock); //self is stub
-	classblock = classblock->getSuperBlockPointer(); //inheritance chain
+	brtn = cblock->isIdInScope(dataindex,symptr); //returns symbol
+	hasHazyKin |= checkHasHazyKin(cblock); //self is stub
+	cblock = cblock->isAClassBlock() ? ((NodeBlockClass *) cblock)->getSuperBlockPointer() : NULL; //inheritance chain
       }
+
+    //search current class file scope only (not ancestors')
+    if(!brtn)
+      brtn = isIdInLocalFileScope(cloc, dataindex, symptr); //local constant or typedef
+
     return brtn;
   } //isDataMemberIdInClassScope
+
+  bool CompilerState::isIdInLocalFileScope(Locator loc, u32 id, Symbol *& symptr)
+  {
+    bool brtn = false;
+    NodeBlockLocals * locals = getLocalScopeBlock(loc);
+    if(locals)
+      brtn = locals->isIdInScope(id, symptr);
+    return brtn;
+  } //isIdInLocalFileScope
 
   bool CompilerState::isFuncIdInClassScope(u32 dataindex, Symbol * & symptr, bool& hasHazyKin)
   {
@@ -2251,17 +2374,20 @@ namespace MFM {
 
     //start with the current class block and look up family tree
     //until the 'variable id' is found.
-    NodeBlockClass * classblock = getClassBlock();
+    NodeBlockContext * cblock = getContextBlock();
 
     //substitute another selected class block to search for data member
     if(useMemberBlock())
-      classblock = getCurrentMemberClassBlock();
+      cblock = getCurrentMemberClassBlock();
 
-    while(!brtn && classblock)
+    if(cblock && !cblock->isAClassBlock())
+      return false;
+
+    while(!brtn && cblock)
       {
-	brtn = classblock->isFuncIdInScope(dataindex,symptr); //returns symbol
-	hasHazyKin |= checkHasHazyKin(classblock); //self is stub
-	classblock = classblock->getSuperBlockPointer(); //inheritance chain
+	brtn = ((NodeBlockClass *) cblock)->isFuncIdInScope(dataindex,symptr); //returns symbol
+	hasHazyKin |= checkHasHazyKin(cblock); //self is stub
+	cblock = ((NodeBlockClass *) cblock)->getSuperBlockPointer(); //inheritance chain
       }
     return brtn;
   } //isFuncIdInClassScope
@@ -2322,11 +2448,29 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return rtnb;
   } //findMatchingFunctionInAncestor
 
+  bool CompilerState::isIdInCurrentScope(u32 id, Symbol *& asymptr)
+  {
+    bool brtn = false;
+    //also applies when isParsingLocalDef()
+    brtn = getCurrentBlock()->isIdInScope(id, asymptr);
+    return brtn;
+  } //isIdInCurrentScope
+
   //symbol ownership goes to the current block (end of vector)
   void CompilerState::addSymbolToCurrentScope(Symbol * symptr)
   {
+    //also applies when isParsingLocalDef()
     getCurrentBlock()->addIdToScope(symptr->getId(), symptr);
   }
+
+  void CompilerState::addSymbolToLocalScope(Symbol * symptr, Locator loc)
+  {
+    assert(symptr);
+    NodeBlockLocals * locals = makeLocalScopeBlock(loc); //getLocalScopeLocator
+    assert(locals);
+
+    locals->addIdToScope(symptr->getId(), symptr);
+  } //addSymbolToLocalScope
 
   //symbol ownership goes to the member block (end of vector)
   // making stuff up!
@@ -2955,7 +3099,10 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   bool CompilerState::thisClassHasTheTestMethod()
   {
-    NodeBlockFunctionDefinition * func = getClassBlock()->findTestFunctionNode();
+    NodeBlockFunctionDefinition * func = NULL;
+    NodeBlockContext * cblock = getContextBlock();
+    if(cblock->isAClassBlock())
+      func = ((NodeBlockClass *) cblock)->findTestFunctionNode();
     return (func != NULL);
   } //thisClassHasTheTestMethod
 
@@ -3265,6 +3412,91 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return false;
   } //getStructuredCommentToken
 
+  void CompilerState::setLocalScopeForParsing(const Token& localTok)
+  {
+    m_parsingLocalDef = true;
+    m_currentLocalDefToken = localTok;
+    NodeBlockLocals * locals = makeLocalScopeBlock(localTok.m_locator);
+    assert(locals);
+    pushClassContext(locals->getNodeType(), locals, locals, false, NULL);
+  }
+
+  void CompilerState::clearLocalScopeForParsing()
+  {
+    m_parsingLocalDef = false;
+    popClassContext(); //restore
+  }
+
+  bool CompilerState::isParsingLocalDef()
+  {
+    return m_parsingLocalDef;
+  }
+
+  Locator CompilerState::getLocalScopeLocator()
+  {
+    assert(isParsingLocalDef());
+    return m_currentLocalDefToken.m_locator;
+  }
+
+  NodeBlockLocals * CompilerState::getLocalScopeBlock(Locator loc)
+  {
+    u32 pathidx = loc.getPathIndex();
+    return getLocalScopeBlockByPathId(pathidx);
+  } //getLocalScopeBlock
+
+  NodeBlockLocals * CompilerState::getLocalScopeBlockByIndex(UTI luti)
+  {
+    UlamType * lut = getUlamTypeByIndex(luti);
+    u32 pathid = lut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId();
+    return getLocalScopeBlockByPathId(pathid);
+  } //getLocalScopeBlockByIndex
+
+  NodeBlockLocals * CompilerState::getLocalScopeBlockByPathId(u32 pathid)
+  {
+    NodeBlockLocals * rtnLocals = NULL;
+
+    std::map<u32, NodeBlockLocals*>::iterator it = m_localsPerFilePath.find(pathid);
+
+    if(it != m_localsPerFilePath.end())
+      {
+	rtnLocals = it->second;
+	assert(rtnLocals);
+	assert(getUlamTypeByIndex(rtnLocals->getNodeType())->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId() == pathid); //sanity check
+      }
+    return rtnLocals;
+  } //getLocalScopeBlockByPathId
+
+  NodeBlockLocals * CompilerState::makeLocalScopeBlock(Locator loc)
+  {
+    NodeBlockLocals * rtnLocals = getLocalScopeBlock(loc);
+    if(!rtnLocals)
+      {
+      	//add new entry for this loc
+	NodeBlockLocals * newblocklocals = new NodeBlockLocals(NULL, *this); //no previous block
+	assert(newblocklocals);
+	newblocklocals->setNodeLocation(loc);
+
+	u32 pathidx = loc.getPathIndex();
+
+	std::pair<std::map<u32, NodeBlockLocals*>::iterator, bool> reti;
+	reti = m_localsPerFilePath.insert(std::pair<u32, NodeBlockLocals*>(pathidx,newblocklocals)); //map owns block
+	bool notdupi = reti.second; //false if already existed, i.e. not added
+	if(!notdupi)
+	  {
+	    delete newblocklocals;
+	    newblocklocals = NULL;
+	    assert(0);
+	  }
+
+	//set node type based on ulam file name id
+	UlamKeyTypeSignature lkey(pathidx, 0, NONARRAYSIZE, 0, ALT_NOT);
+	UTI luti = makeUlamType(lkey, LocalsFileScope, UC_NOTACLASS);
+	newblocklocals->setNodeType(luti);
+	rtnLocals = newblocklocals;
+      }
+    return rtnLocals;
+  } //makeLocalScopeBlock
+
   NNO CompilerState::getNextNodeNo()
   {
     return ++m_nextNodeNumber; //first one is 1
@@ -3275,21 +3507,15 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     if(useMemberBlock())
       {
 	UTI mbuti = getCurrentMemberClassBlock()->getNodeType();
-	u32 mbid = getUlamKeyTypeSignatureByIndex(mbuti).getUlamKeyTypeSignatureNameId();
-	SymbolClassName * cnsym = NULL;
-	AssertBool isDefined = alreadyDefinedSymbolClassName(mbid, cnsym);
-	assert(isDefined);
-	return cnsym->findNodeNoInAClassInstance(mbuti, n);
+	return findNodeNoInAClass(n, mbuti);
       }
 
     NodeBlock * currBlock = getCurrentBlock();
-    if(currBlock && (currBlock->getNodeNo() == n) && (getClassBlock()->getNodeType() == getCompileThisIdx()))
+    if(currBlock && (currBlock->getNodeNo() == n) && (getContextBlock()->getNodeType() == getCompileThisIdx()))
       return currBlock; //avoid chix-n-egg with functiondefs
 
-    SymbolClassName * cnsym = NULL;
-    AssertBool isDefined = alreadyDefinedSymbolClassName(getCompileThisId(), cnsym);
-    assert(isDefined);
-    Node * rtnNode = cnsym->findNodeNoInAClassInstance(getCompileThisIdx(), n);
+    UTI cuti = getCompileThisIdx();
+    Node * rtnNode = findNodeNoInAClass(n, cuti);
 
     //last resort, if we are in the middle of resolving pending args for a stub
     // and to do constant folding, we need to find the parent node that's in the
@@ -3304,31 +3530,74 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 	    AssertBool isDefined = alreadyDefinedSymbolClassNameTemplate(stubid, cntsym);
 	    assert(isDefined);
 	    rtnNode = cntsym->findNodeNoInAClassInstance(stubuti, n);
+	    //local def?
+	    if(!rtnNode)
+	      rtnNode = findNodeNoInALocalScope(cntsym->getLoc(), n);
 	  }
 	else
 	  {
-	    //what if in ancestor?
+	    //what if in ancestor? (not its local scope)
 	    UTI superuti = isClassASubclass(getCompileThisIdx());
 	    if((superuti != Nouti) && (superuti != Hzy))
 	      rtnNode = findNodeNoInAClass(n, superuti);
 	  }
+      }
+
+    if(!rtnNode)
+      {
+	//check in local scope
+	u32 cid = getUlamKeyTypeSignatureByIndex(cuti).getUlamKeyTypeSignatureNameId();
+	SymbolClassName * cnsym = NULL;
+	AssertBool isDefined = alreadyDefinedSymbolClassName(cid, cnsym);
+	assert(isDefined);
+	rtnNode = findNodeNoInALocalScope(cnsym->getLoc(), n);
       }
     return rtnNode;
   } //findNodeNoInThisClass
 
   Node * CompilerState::findNodeNoInAClass(NNO n, UTI cuti)
   {
+    Node * rtnNode = NULL;
     u32 cid = getUlamKeyTypeSignatureByIndex(cuti).getUlamKeyTypeSignatureNameId();
     SymbolClassName * cnsym = NULL;
     AssertBool isDefined = alreadyDefinedSymbolClassName(cid, cnsym);
     assert(isDefined);
-    return cnsym->findNodeNoInAClassInstance(cuti, n);
+    rtnNode = cnsym->findNodeNoInAClassInstance(cuti, n);
+    //don't check local scope automatically, e.g. in case of superclass
+    return rtnNode;
   } //findNodeNoInAClass
 
   UTI CompilerState::findAClassByNodeNo(NNO n)
   {
     return m_programDefST.findClassNodeNoForTableOfClasses(n); //Nav not found
   } //findAClassByNodeNo
+
+  NodeBlockLocals * CompilerState::findALocalScopeByNodeNo(NNO n)
+  {
+    NodeBlockLocals * rtnlocals = NULL;
+    std::map<u32, NodeBlockLocals *>::iterator it;
+
+    for(it = m_localsPerFilePath.begin(); it != m_localsPerFilePath.end(); it++)
+      {
+	NodeBlockLocals * locals = it->second;
+	assert(locals);
+	if(locals->getNodeNo() == n)
+	  {
+	    rtnlocals = locals;
+	    break;
+	  }
+      }
+    return rtnlocals;
+  } //findALocalScopeByNodeNo
+
+  Node * CompilerState::findNodeNoInALocalScope(Locator loc, NNO n)
+  {
+    Node * rtnNode = NULL;
+    NodeBlockLocals * locals = getLocalScopeBlock(loc);
+    if(locals)
+      locals->findNodeNo(n, rtnNode);
+    return rtnNode;
+  }
 
   NodeBlockClass * CompilerState::getAClassBlock(UTI cuti)
   {
@@ -3384,21 +3653,21 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return 0; //genesis of class symbol
   } //getCurrentBlockNo
 
-  NodeBlockClass * CompilerState::getClassBlock()
+  NodeBlockContext * CompilerState::getContextBlock()
   {
     ClassContext cc;
     AssertBool isDefined = m_classContextStack.getCurrentClassContext(cc);
     assert(isDefined);
-    return cc.getClassBlock();
+    return cc.getContextBlock();
   }
 
-  NNO CompilerState::getClassBlockNo()
+  NNO CompilerState::getContextBlockNo()
   {
     ClassContext cc;
     AssertBool isDefined = m_classContextStack.getCurrentClassContext(cc);
     assert(isDefined);
-    if(cc.getClassBlock())
-      return cc.getClassBlock()->getNodeNo();
+    if(cc.getContextBlock())
+      return cc.getContextBlock()->getNodeNo();
     return 0;
   }
 
@@ -3418,10 +3687,10 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return cc.getCurrentMemberClassBlock();
   }
 
-  void CompilerState::pushClassContext(UTI idx, NodeBlock * currblock, NodeBlockClass * classblock, bool usemember, NodeBlockClass * memberblock)
+  void CompilerState::pushClassContext(UTI idx, NodeBlock * currblock, NodeBlockContext * contextblock, bool usemember, NodeBlockClass * memberblock)
   {
     u32 id = getUlamKeyTypeSignatureByIndex(idx).getUlamKeyTypeSignatureNameId();
-    ClassContext cc(id, idx, currblock, classblock, usemember, memberblock); //new
+    ClassContext cc(id, idx, currblock, contextblock, usemember, memberblock); //new
     m_classContextStack.pushClassContext(cc);
   }
 
@@ -3516,6 +3785,11 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     //do not include ALT_AS, ALT_ARRAYITEM, etc as Ref here. Specifically a ref (&).
     UlamType * aut = getUlamTypeByIndex(auti);
     return ((aut->getUlamTypeEnum() == UAtom) && (aut->getReferenceType() == ALT_REF));
+  }
+
+  bool CompilerState::isAClass(UTI uti)
+  {
+    return (getUlamTypeByIndex(uti)->getUlamTypeEnum() == Class);
   }
 
   bool CompilerState::isASeenClass(UTI cuti)

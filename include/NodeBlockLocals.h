@@ -1,5 +1,5 @@
 /**                                        -*- mode:C++ -*-
- * SymbolTable.h -  Basic handling of Table of Symbols for ULAM
+ * NodeBlockLocals.h - Node for handling Local Defs for ULAM
  *
  * Copyright (C) 2014-2016 The Regents of the University of New Mexico.
  * Copyright (C) 2014-2016 Ackleyshack LLC.
@@ -26,7 +26,7 @@
  */
 
 /**
-  \file SymbolTable.h -  Basic handling of Table of Symbols for ULAM
+  \file NodeBlockLocals.h - Node for handling Local Defs for ULAM
   \author Elenas S. Ackley.
   \author David H. Ackley.
   \date (C) 2014-2016 All rights reserved.
@@ -34,55 +34,52 @@
 */
 
 
-#ifndef SYMBOLTABLE_H
-#define SYMBOLTABLE_H
+#ifndef NODEBLOCKLOCALS_H
+#define NODEBLOCKLOCALS_H
 
-#include <map>
-#include <vector>
-#include "Symbol.h"
-#include "itype.h"
-#include "File.h"
-#include "FileManager.h"
-//#include "MapClassMemberDesc.h"
-//#include "TargetMap.h"
-//#include "UlamTypeClass.h"
+#include "NodeBlockContext.h"
+
 
 namespace MFM{
 
-  struct CompilerState; //forward
-  class Node; //forward
-  class NodeBlockClass; //forward
-  class NodeBlock; //forward
-
-  class SymbolTable
+  class NodeBlockLocals : public NodeBlockContext
   {
   public:
 
-    SymbolTable(CompilerState& state);
-    SymbolTable(const SymbolTable& ref);
-    virtual ~SymbolTable();
+    NodeBlockLocals(NodeBlock * prevBlockNode, CompilerState & state);
 
-    virtual void clearTheTable();
-    virtual bool isInTable(u32 id, Symbol * & symptrref);
-    virtual void addToTable(u32 id, Symbol * s);
-    virtual void replaceInTable(u32 oldid, u32 newid, Symbol * s);
-    virtual void replaceInTable(Symbol * oldsym, Symbol * newsym);
-    virtual bool removeFromTable(u32 id, Symbol *& rtnsymptr);
+    NodeBlockLocals(const NodeBlockLocals& ref);
 
-    virtual Symbol * getSymbolPtr(u32 id);
+    virtual ~NodeBlockLocals();
 
-    virtual u32 getTableSize();
+    virtual Node * instantiate();
 
-    virtual u32 getTotalSymbolSize();
+    virtual void printPostfix(File * fp);
+
+    virtual const char * getName();
+
+    virtual const std::string prettyNodeName();
+
+    virtual bool isAClassBlock();
+
+    void appendNextNode(Node * node);
+
+    virtual UTI checkAndLabelType();
+
+    virtual void calcMaxDepth(u32& depth, u32& maxdepth, s32 base);
+
+    virtual void genCode(File * fp, UVPass& uvpass);
+
 
   protected:
-    std::map<u32, Symbol* > m_idToSymbolPtr;
-    CompilerState & m_state;
+
 
   private:
+
+    NodeStatements * m_nodeEndingStmt; //ptr to last statement node while parsing.
 
   };
 
 }
 
-#endif //end SYMBOLTABLE_H
+#endif //end NODEBLOCKLOCALS_H

@@ -7,13 +7,13 @@
 
 namespace MFM {
 
-  NodeBlockClass::NodeBlockClass(NodeBlock * prevBlockNode, CompilerState & state, NodeStatements * s) : NodeBlock(prevBlockNode, state, s), m_functionST(state), m_virtualmethodMaxIdx(UNKNOWNSIZE), m_superBlockNode(NULL), m_isEmpty(false)
+  NodeBlockClass::NodeBlockClass(NodeBlock * prevBlockNode, CompilerState & state) : NodeBlockContext(prevBlockNode, state), m_functionST(state), m_virtualmethodMaxIdx(UNKNOWNSIZE), m_superBlockNode(NULL), m_isEmpty(false)
   {
     m_nodeParameterList = new NodeList(state);
     assert(m_nodeParameterList);
   }
 
-  NodeBlockClass::NodeBlockClass(const NodeBlockClass& ref) : NodeBlock(ref), m_functionST(ref.m_functionST) /* deep copy */, m_virtualmethodMaxIdx(ref.m_virtualmethodMaxIdx), m_superBlockNode(NULL), m_isEmpty(ref.m_isEmpty), m_nodeParameterList(NULL)
+  NodeBlockClass::NodeBlockClass(const NodeBlockClass& ref) : NodeBlockContext(ref), m_functionST(ref.m_functionST) /* deep copy */, m_virtualmethodMaxIdx(ref.m_virtualmethodMaxIdx), m_superBlockNode(NULL), m_isEmpty(ref.m_isEmpty), m_nodeParameterList(NULL)
   {
     setNodeType(m_state.getCompileThisIdx());
     m_nodeParameterList = (NodeList *) ref.m_nodeParameterList->instantiate(); //instances don't need this; its got symbols
@@ -331,7 +331,7 @@ namespace MFM {
 	else if(superclasstype != UC_QUARK)
 	  {
 	    //for all others (elements and quarks)
-	    //must be "seen" by c&l; e.g. typedef array of quarks (t3674)
+	    //must be "seen" by now; e.g. typedef array of quarks (t3674), t3862
 	    std::ostringstream msg;
 	    msg << "Subclass '";
 	    msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
@@ -1030,7 +1030,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
   void NodeBlockClass::genCodeHeaderQuark(File * fp)
   {
     //use the instance UTI instead of the node's original type
-    UlamType * cut = m_state.getUlamTypeByIndex(m_state.getCompileThisIdx());
+    UTI cuti = m_state.getCompileThisIdx();
+    UlamType * cut = m_state.getUlamTypeByIndex(cuti);
 
     m_state.indent(fp);
     fp->write("template <class EC>"); GCNL;
@@ -1039,6 +1040,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("struct ");
     fp->write(cut->getUlamTypeMangledName().c_str());
     fp->write(" : public UlamQuark<EC>");
+
+    genThisUlamSuperClassAsAHeaderComment(fp);
 
     fp->write("\n");
 
@@ -1111,6 +1114,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write(cut->getUlamTypeMangledName().c_str());
     fp->write(" : public UlamElement<EC>"); //was DefaultElement
 
+    genThisUlamSuperClassAsAHeaderComment(fp);
+
     m_state.indent(fp);
     fp->write("{\n");
 
@@ -1169,6 +1174,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write(cut->getUlamTypeMangledName().c_str());
     fp->write(" : public UlamTransient<EC> ");
 
+    genThisUlamSuperClassAsAHeaderComment(fp);
+
     m_state.indent(fp);
     fp->write("{\n");
 
@@ -1212,6 +1219,17 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     // we need vector of offsets to generate a separate function decl/dfn for each one's POS
     // in case a function has one as a return value and/or parameter.
   } //genCodeHeaderTransient
+
+  void NodeBlockClass::genThisUlamSuperClassAsAHeaderComment(File * fp)
+  {
+    UTI superuti = m_state.isClassASubclass(m_state.getCompileThisIdx());
+    if(superuti != Nouti)
+      {
+	fp->write(" /*, ");
+	fp->write(m_state.getUlamTypeByIndex(superuti)->getUlamTypeMangledName().c_str());
+	fp->write(" */");
+      }
+  }
 
   void NodeBlockClass::genShortNameParameterTypesExtractedForHeaderFile(File * fp)
   {
@@ -1538,7 +1556,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
   void NodeBlockClass::genCodeBuiltInFunctionIsRelatedInstance(File * fp)
   {
     UTI nuti = getNodeType();
-    UTI superuti = m_state.isClassASubclass(getNodeType());
+    UTI superuti = m_state.isClassASubclass(nuti);
     assert(superuti != Hzy);
     if(superuti != Nouti)
       {
