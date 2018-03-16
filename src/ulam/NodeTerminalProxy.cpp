@@ -12,7 +12,7 @@ namespace MFM {
     // memberType is corrected for sizeof during c&l
   }
 
-  NodeTerminalProxy::NodeTerminalProxy(const NodeTerminalProxy& ref) : NodeTerminal(ref), m_nodeOf(NULL), m_uti(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_uti)), m_funcTok(ref.m_funcTok), m_ready(ref.m_ready), m_nodeTypeDesc(NULL)
+  NodeTerminalProxy::NodeTerminalProxy(const NodeTerminalProxy& ref) : NodeTerminal(ref), m_nodeOf(NULL), m_uti(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_uti,ref.getNodeLocation())), m_funcTok(ref.m_funcTok), m_ready(ref.m_ready), m_nodeTypeDesc(NULL)
   {
     if(ref.m_nodeTypeDesc)
       m_nodeTypeDesc = (NodeTypeDescriptor *) ref.m_nodeTypeDesc->instantiate();
@@ -133,7 +133,7 @@ namespace MFM {
 	    msg << "Determined type for member '";
 	    msg << m_nodeOf->getName();
 	    msg << "' Proxy, as type: ";
-	    msg << m_state.getUlamTypeNameBriefByIndex(ofuti).c_str();
+	    msg << m_state.getUlamTypeNameByIndex(ofuti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	    m_uti = ofuti;
 	  }
@@ -172,9 +172,9 @@ namespace MFM {
 	  {
 	    std::ostringstream msg;
 	    msg << "Substituting Mapped UTI" << mappedUTI;
-	    msg << ", " << m_state.getUlamTypeNameBriefByIndex(mappedUTI).c_str();
+	    msg << ", " << m_state.getUlamTypeNameByIndex(mappedUTI).c_str();
 	    msg << " for incomplete Proxy type: ";
-	    msg << m_state.getUlamTypeNameBriefByIndex(m_uti).c_str();
+	    msg << m_state.getUlamTypeNameByIndex(m_uti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 	    m_uti = mappedUTI;
 	  }
@@ -585,34 +585,26 @@ namespace MFM {
 	msg << "' while compiling class: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();
 	if(m_state.okUTItoContinue(m_uti) || (m_uti == Hzy))
-	  {
-	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT); //error/t3298
-	    m_state.setGoAgain(); //since not error; maybe no nodetypedesc
-	  }
+	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT); //error/t3298
 	else
-	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	//rtnb = false; don't want to stop after parsing.
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    rtnb = false; //don't want to stop after parsing.???
+	  }
       }
     else
       {
 	//depending on the of-func, update our constant
 	if(!setConstantValue(m_funcTok))
 	  {
-	    std::ostringstream msg;
-	    msg << "Proxy Type: " << m_state.getUlamTypeNameBriefByIndex(m_uti).c_str();
-	    msg << " constant value for its <";
-	    msg << m_funcTok.getTokenString();
-	    msg << "> is still incomplete and unknown while compiling class: ";
-	    msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();
-	    MSG(&m_funcTok, msg.str().c_str(), WAIT);
-	    m_state.setGoAgain(); //since not error
-	    rtnb = false;
+	    //err msg output already!
+	    rtnb = false; //turns into a nav! error/t3937,t3938,t41066
 	  }
 	else
 	  {
 	    std::ostringstream msg;
 	    msg << "Yippee! Proxy Type: ";
-	    msg << m_state.getUlamTypeNameBriefByIndex(m_uti).c_str();
+	    msg << m_state.getUlamTypeNameByIndex(m_uti).c_str();
 	    msg << " (UTI" << getNodeType() << ") is KNOWN (=" << m_constant.uval;
 	    msg << ") while compiling class: ";
 	    msg << m_state.getUlamTypeNameBriefByIndex(m_state.getCompileThisIdx()).c_str();

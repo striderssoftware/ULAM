@@ -7,7 +7,7 @@
 
 namespace MFM {
 
-  NodeBlockClass::NodeBlockClass(NodeBlock * prevBlockNode, CompilerState & state) : NodeBlockContext(prevBlockNode, state), m_functionST(state), m_virtualmethodMaxIdx(UNKNOWNSIZE), m_superBlockNode(NULL), m_isEmpty(false), m_registeredForTestInstance(false)
+  NodeBlockClass::NodeBlockClass(NodeBlock * prevBlockNode, CompilerState & state) : NodeBlockContext(prevBlockNode, state), m_functionST(state), m_virtualmethodMaxIdx(UNKNOWNSIZE), m_superBlockNode(NULL), m_buildingDefaultValueInProgress(false), m_bitPackingInProgress(false), m_isEmpty(false), m_registeredForTestInstance(false)
 
   {
     m_nodeParameterList = new NodeList(state);
@@ -16,7 +16,7 @@ namespace MFM {
     assert(m_nodeArgumentList);
   }
 
-  NodeBlockClass::NodeBlockClass(const NodeBlockClass& ref) : NodeBlockContext(ref), m_functionST(ref.m_functionST) /* deep copy */, m_virtualmethodMaxIdx(ref.m_virtualmethodMaxIdx), m_superBlockNode(NULL), m_isEmpty(ref.m_isEmpty), m_registeredForTestInstance(false), m_nodeParameterList(NULL), m_nodeArgumentList(NULL)
+  NodeBlockClass::NodeBlockClass(const NodeBlockClass& ref) : NodeBlockContext(ref), m_functionST(ref.m_functionST) /* deep copy */, m_virtualmethodMaxIdx(ref.m_virtualmethodMaxIdx), m_superBlockNode(NULL), m_buildingDefaultValueInProgress(false), m_bitPackingInProgress(false), m_isEmpty(ref.m_isEmpty), m_registeredForTestInstance(false), m_nodeParameterList(NULL), m_nodeArgumentList(NULL)
   {
     UTI cuti = m_state.getCompileThisIdx();
     m_state.pushClassContext(cuti, this, this, false, NULL); //t3895
@@ -88,7 +88,6 @@ namespace MFM {
 	NodeBlockClass * superblock = getSuperBlockPointer();
 	//e.g. not a stub, yet not complete because its superclass is a stub! (ish 06222016)
 	// or is a stub! (t3887), or just incomplete (t41012)
-	//assert(superblock || m_state.hasClassAStub(superuti) || m_state.isClassAStub(cuti));
 	if(superblock && superblock->findNodeNo(n, foundNode))
 	  return true;
       }
@@ -158,7 +157,7 @@ namespace MFM {
     if(m_nodeParameterList->getNumberOfNodes() > 0)
       {
 	SymbolClassNameTemplate * cnsym = NULL;
-	AssertBool isDefined = m_state.alreadyDefinedSymbolClassNameTemplate(m_state.getUlamKeyTypeSignatureByIndex(cuti).getUlamKeyTypeSignatureNameId(), cnsym);
+	AssertBool isDefined = m_state.alreadyDefinedSymbolClassNameTemplate(m_state.getUlamTypeNameIdByIndex(cuti), cnsym);
 	assert(isDefined);
 	cnsym->printClassTemplateArgsForPostfix(fp); //m_nodeParameterList->print(fp);
       }
@@ -220,8 +219,7 @@ namespace MFM {
 	  {
 	    //use SCN instead of SC in case of stub (use template's classblock)
 	    SymbolClassName * supercnsym = NULL;
-	    u32 superid = m_state.getUlamTypeByIndex(superuti)->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId();
-	    AssertBool isDefined = m_state.alreadyDefinedSymbolClassName(superid, supercnsym);
+	    AssertBool isDefined = m_state.alreadyDefinedSymbolClassNameByUTI(superuti, supercnsym);
 	    assert(isDefined);
 	    superblock = supercnsym->getClassBlockNode();
 	    superuti = supercnsym->getUlamTypeIdx(); //in case of stub (t41007)
@@ -263,7 +261,7 @@ namespace MFM {
     std::ostringstream note;
     note << "(" << nsize << " of ";
     note << totalsize << " bits, at " << accumsize << ") ";
-    note << "from superclass: " << nut->getUlamTypeNameBrief().c_str();
+    note << "from superclass: " << nut->getUlamTypeClassNameBrief(nuti).c_str();
     MSG(getNodeLocationAsString().c_str(), note.str().c_str(), NOTE);
 
     accumsize += nsize;
@@ -278,7 +276,7 @@ namespace MFM {
     UlamType * cut = m_state.getUlamTypeByIndex(cuti);
 
     std::ostringstream note;
-    note << "Components of " << cut->getUlamTypeNameBrief().c_str() << " are."; //terminating double dot
+    note << "Components of " << cut->getUlamTypeClassNameBrief(cuti).c_str() << " are."; //terminating double dot
     MSG(getNodeLocationAsString().c_str(), note.str().c_str(), NOTE);
 
     UTI superuti = m_state.isClassASubclass(cuti);
@@ -290,8 +288,7 @@ namespace MFM {
 	  {
 	    //use SCN instead of SC in case of stub (use template's classblock)
 	    SymbolClassName * supercnsym = NULL;
-	    u32 superid = m_state.getUlamTypeByIndex(superuti)->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId();
-	    AssertBool isDefined = m_state.alreadyDefinedSymbolClassName(superid, supercnsym);
+	    AssertBool isDefined = m_state.alreadyDefinedSymbolClassNameByUTI(superuti, supercnsym);
 	    assert(isDefined);
 	    superblock = supercnsym->getClassBlockNode();
 	  }
@@ -366,14 +363,12 @@ namespace MFM {
     //if(!checkArgumentNodeTypes())
 
     // Inheritance checks
-    //UTI nuti = getNodeType();
     UTI nuti = m_state.getCompileThisIdx(); //may be Hzy getNodeType();
     UTI superuti = m_state.isClassASubclass(nuti);
 
     //skip the ancestor of a template
     if(m_state.okUTItoContinue(superuti))
       {
-	//if(m_state.isHolder(superuti)) //t3874
 	if(m_state.isHolder(superuti) || !m_state.isComplete(superuti)) //t3874, t41010
 	  {
 	    UTI mappedUTI = superuti;
@@ -386,16 +381,16 @@ namespace MFM {
 		msg << "Substituting mapped UTI" << mappedUTI;
 		msg << ", " << m_state.getUlamTypeNameBriefByIndex(mappedUTI).c_str();
 		msg << " for SUPERCLASS holder type: '";
-		msg << m_state.getUlamTypeNameBriefByIndex(superuti).c_str();
+		msg << m_state.getUlamTypeNameByIndex(superuti).c_str();
 		msg << "' UTI" << superuti << " while labeling class: ";
 		msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
-		m_state.setGoAgain();
 		//need to break the chain; e.g. don't want template symbol addresses used
 		setSuperBlockPointer(NULL); //force to try again!! avoid inf loop
 		superuti = mappedUTI;
 		m_state.resetClassSuperclass(nuti, superuti);
 		setNodeType(Hzy); //t41150
+		m_state.setGoAgain();
 		return Hzy; //short-circuit
 	      }
 	  }
@@ -440,11 +435,10 @@ namespace MFM {
 		  }
 
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
-		m_state.setGoAgain();
 		//need to break the chain; e.g. don't want template symbol addresses used
 		setSuperBlockPointer(NULL); //force to try again!! avoid inf loop
 		setNodeType(Hzy); //t41150
-
+		m_state.setGoAgain();
 		if(brtnhzy)
 		  return Hzy; //short-circuit holders and stubs (e.g. t41010, t3831, t3889)
 		//o.w. continue..
@@ -476,8 +470,8 @@ namespace MFM {
 		    msg << "' inherits from unready '";
 		    msg << m_state.getUlamTypeNameBriefByIndex(superuti).c_str() << "'";
 		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
-		    m_state.setGoAgain();
 		    setNodeType(Hzy);
+		    m_state.setGoAgain();
 		    return Hzy;
 		  }
 	      }
@@ -971,6 +965,11 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
   //starts here, called by SymbolClass
   bool NodeBlockClass::buildDefaultValue(u32 wlen, BV8K& dvref)
   {
+    if(m_buildingDefaultValueInProgress)
+      return false;
+
+    m_buildingDefaultValueInProgress = true; //set
+
     bool aok = true;
     if((m_state.isClassASubclass(getNodeType()) != Nouti))
       {
@@ -982,8 +981,33 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     if(aok)
       if(m_nodeNext)
 	aok = m_nodeNext->buildDefaultValue(wlen, dvref); //side-effect for dm vardecls
+
+    m_buildingDefaultValueInProgress = false; //clear
     return aok;
   } //buildDefaultValue
+
+  bool NodeBlockClass::buildDefaultValueForClassConstantDefs()
+  {
+    if(classConstantsReady())
+      return true;
+
+    bool aok = true;
+    if((m_state.isClassASubclass(getNodeType()) != Nouti))
+      {
+	NodeBlockClass * superblock = getSuperBlockPointer();
+	assert(superblock);
+	aok = superblock->buildDefaultValueForClassConstantDefs();
+      }
+
+    if(aok)
+      if(m_nodeNext)
+	aok = m_nodeNext->buildDefaultValueForClassConstantDefs();
+
+    if(aok)
+      m_classConstantsReady = true;
+
+    return aok;
+  } //buildDefaultValueForClassConstantDefs
 
   void NodeBlockClass::genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos)
   {
@@ -1256,15 +1280,23 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     return func;
   } //findToIntFunctionNode
 
-  void NodeBlockClass::packBitsForVariableDataMembers()
+  TBOOL NodeBlockClass::packBitsForVariableDataMembers()
   {
-    if(m_ST.getTableSize() == 0) return;
+    if(m_ST.getTableSize() == 0) return TBOOL_TRUE;
+
+    if(m_bitPackingInProgress)
+      return TBOOL_HAZY; //or false?
 
     u32 reloffset = 0;
 
     UTI nuti = getNodeType();
     UTI superuti = m_state.isClassASubclass(nuti);
-    assert(superuti != Hzy);
+    //assert(superuti != Hzy);
+    if(superuti == Hzy)
+      {
+	return TBOOL_HAZY;
+      }
+
     if(superuti != Nouti)
       {
 	NodeBlockClass * superblock = getSuperBlockPointer();
@@ -1277,18 +1309,31 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
 	    msg << m_state.getUlamTypeNameBriefByIndex(superuti).c_str();
 	    msg << "', an INCOMPLETE Super class; ";
 	    msg << "No bit packing of variable data members";
-	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    return;
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
+	    return TBOOL_HAZY;
 	  }
+
 	assert(UlamType::compare(superblock->getNodeType(), superuti, m_state) == UTIC_SAME);
 	u32 superoffset = m_state.getTotalBitSize(superuti);
-	assert(superoffset >= 0);
+	if(superoffset < 0)
+	  {
+	    return TBOOL_HAZY;
+	  }
 	reloffset += superoffset;
       }
 
+    TBOOL rtntb = TBOOL_TRUE;
+    m_bitPackingInProgress = true;;
+
     //m_ST.packBitsForTableOfVariableDataMembers(); //ST order not as declared
     if(m_nodeNext)
-      m_nodeNext->packBitsInOrderOfDeclaration(reloffset);
+      {
+	TBOOL nodetb = m_nodeNext->packBitsInOrderOfDeclaration(reloffset);
+	rtntb = Node::minTBOOL(rtntb, nodetb);
+      }
+
+    m_bitPackingInProgress = false;
+    return rtntb;
   } //packBitsForVariableDataMembers
 
   void NodeBlockClass::printUnresolvedVariableDataMembers()
@@ -1810,7 +1855,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("(){}"); GCNL;
     fp->write("\n");
 
-    assert(m_state.getCompileThisId() == cut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId());
+    assert(m_state.getCompileThisId() == cut->getUlamTypeNameId());
   } //genCodeBodyElement
 
   void NodeBlockClass::genCodeBodyQuark(File * fp, UVPass& uvpass)
@@ -1851,7 +1896,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("(){}"); GCNL;
     fp->write("\n");
 
-    assert(m_state.getCompileThisId() == cut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId());
+    assert(m_state.getCompileThisId() == cut->getUlamTypeNameId());
   } //genCodeBodyQuark
 
   void NodeBlockClass::genCodeBodyTransient(File * fp, UVPass& uvpass)
@@ -1893,7 +1938,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("(){}"); GCNL;
     fp->write("\n");
 
-    assert(m_state.getCompileThisId() == cut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId());
+    assert(m_state.getCompileThisId() == cut->getUlamTypeNameId());
   } //genCodeBodyTransient
 
   void NodeBlockClass::genCodeBodyLocalsFilescope(File * fp, UVPass& uvpass)
@@ -1933,7 +1978,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("(){}"); GCNL;
     fp->write("\n");
 
-    assert(m_state.getCompileThisId() == cut->getUlamKeyTypeSignature().getUlamKeyTypeSignatureNameId());
+    assert(m_state.getCompileThisId() == cut->getUlamTypeNameId());
   } //genCodeBodyLocalsFilescope
 
   void NodeBlockClass::generateCodeForBuiltInClassFunctions(File * fp, bool declOnly, ULAMCLASSTYPE classtype)
@@ -2901,10 +2946,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
       desc.m_structuredComment = "NONE";
 
     //format Ulam Class Signature
-    UlamKeyTypeSignature ckey = cut->getUlamKeyTypeSignature();
-    u32 nameid = ckey.getUlamKeyTypeSignatureNameId();
     SymbolClassName * cnsym = NULL;
-    AssertBool isDefined = m_state.alreadyDefinedSymbolClassName(nameid, cnsym);
+    AssertBool isDefined = m_state.alreadyDefinedSymbolClassNameByUTI(cuti, cnsym);
     assert(isDefined);
     desc.m_classSignature = cnsym->generateUlamClassSignature();
 
@@ -2913,11 +2956,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
       {
 	UTI superuti = m_state.isClassASubclass(cuti);
 	assert(m_state.okUTItoContinue(superuti));
-	UlamType * superut = m_state.getUlamTypeByIndex(superuti);
-	UlamKeyTypeSignature superkey = superut->getUlamKeyTypeSignature();
-	u32 supernameid = superkey.getUlamKeyTypeSignatureNameId();
 	SymbolClassName * supercnsym = NULL;
-	AssertBool isSuperDefined = m_state.alreadyDefinedSymbolClassName(supernameid, supercnsym);
+	AssertBool isSuperDefined = m_state.alreadyDefinedSymbolClassNameByUTI(superuti, supercnsym);
 	assert(isSuperDefined);
 
 	desc.m_baseClassSignature = supercnsym->generateUlamClassSignature();

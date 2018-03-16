@@ -5,12 +5,12 @@
 
 namespace MFM {
 
-  NodeStorageof::NodeStorageof(Node * ofnode, NodeTypeDescriptor * nodetype, CompilerState & state) : Node(state), m_nodeOf(ofnode), m_oftype(Nouti), m_nodeTypeDesc(nodetype), m_currBlockNo(0)
+  NodeStorageof::NodeStorageof(Node * ofnode, NodeTypeDescriptor * nodetype, CompilerState & state) : Node(state), m_nodeOf(ofnode), m_oftype(Nouti), m_nodeTypeDesc(nodetype)
   {
     Node::setStoreIntoAble(TBOOL_HAZY);
   }
 
-  NodeStorageof::NodeStorageof(const NodeStorageof& ref) : Node(ref), m_nodeOf(NULL), m_oftype(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_oftype)), m_nodeTypeDesc(NULL), m_currBlockNo(ref.m_currBlockNo)
+  NodeStorageof::NodeStorageof(const NodeStorageof& ref) : Node(ref), m_nodeOf(NULL), m_oftype(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_oftype,ref.getNodeLocation())), m_nodeTypeDesc(NULL)
   {
     if(ref.m_nodeTypeDesc)
       m_nodeTypeDesc = (NodeTypeDescriptor *) ref.m_nodeTypeDesc->instantiate();
@@ -175,7 +175,6 @@ namespace MFM {
 	  msg << getName() << "'";
 	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 	  nuti = Hzy;
-	  m_state.setGoAgain(); //since not error
 	}
       else
 	{
@@ -224,21 +223,10 @@ namespace MFM {
     }
 
   setNodeType(nuti);
+  if(nuti == Hzy)
+    m_state.setGoAgain(); //since not error
   return nuti;
   } //checkAndLabelType
-
-  NNO NodeStorageof::getBlockNo() const
-  {
-    return m_currBlockNo;
-  }
-
-  NodeBlock * NodeStorageof::getBlock()
-  {
-    assert(m_currBlockNo);
-    NodeBlock * currBlock = (NodeBlock *) m_state.findNodeNoInThisClass(m_currBlockNo);
-    assert(currBlock);
-    return currBlock;
-  }
 
   EvalStatus NodeStorageof::eval()
   {

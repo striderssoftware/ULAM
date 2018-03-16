@@ -66,9 +66,10 @@ namespace MFM {
     return getNodeType();
   } //checkAndLabelType
 
-  void NodeVarRefAs::packBitsInOrderOfDeclaration(u32& offset)
+  TBOOL NodeVarRefAs::packBitsInOrderOfDeclaration(u32& offset)
   {
     m_state.abortShouldntGetHere(); //refs can't be data members
+    return TBOOL_FALSE;
   } //packBitsInOrderOfDeclaration
 
   void NodeVarRefAs::calcMaxDepth(u32& depth, u32& maxdepth, s32 base)
@@ -188,7 +189,7 @@ namespace MFM {
       }
     else if((stgclasstype == UC_ELEMENT))
       {
-	if(stgcosut->isReference())
+	if(stgcosut->isReference()) //not isAltRefType
 	  {
 	    fp->write(", 0u, "); //t3655
 	    fp->write(stgcos->getMangledName().c_str()); //stg
@@ -207,7 +208,7 @@ namespace MFM {
       {
 	// transient can be another transient or a quark, not an element
 	fp->write(", 0u, ");
-	if(stgcosut->isReference())
+	if(stgcosut->isReference()) //not isAltRefType
 	  {
 	    fp->write(stgcos->getMangledName().c_str()); //stg
 	    fp->write(".GetEffectiveSelf()"); //t3824
@@ -224,7 +225,7 @@ namespace MFM {
       {
 	// quark can be another quark, not an element, nor transient
 	fp->write(", 0u, ");
-	if(stgcosut->isReference())
+	if(stgcosut->isReference()) //not isAltRefType
 	  {
 	    fp->write(stgcos->getMangledName().c_str()); //stg
 	    fp->write(".GetEffectiveSelf()"); //tt3829
@@ -240,7 +241,7 @@ namespace MFM {
     else
       m_state.abortUndefinedUlamClassType(); //WHAT THEN???
 
-    if(!stgcosut->isReference())
+    if(!stgcosut->isReference()) //not isAltRefType
       fp->write(", uc"); //t3249
 
     fp->write("); //shadows lhs of 'as'"); GCNL;

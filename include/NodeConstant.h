@@ -75,6 +75,8 @@ namespace MFM{
 
     virtual bool isReadyConstant();
 
+    virtual void setClassType(UTI cuti); //noop
+
     virtual FORECAST safeToCastTo(UTI newType);
 
     virtual UTI checkAndLabelType();
@@ -86,6 +88,8 @@ namespace MFM{
     virtual EvalStatus evalToStoreInto();
 
     virtual void genCode(File * fp, UVPass& uvpass);
+
+    virtual void genCodeToStoreInto(File * fp, UVPass& uvpass);
 
   protected:
     Token m_token;
@@ -99,10 +103,17 @@ namespace MFM{
 
     void setBlockNo(NNO n);
     NNO getBlockNo() const;
+
+    void setBlock(NodeBlock * ptr);
     NodeBlock * getBlock();
 
   private:
     NNO m_currBlockNo;
+    NodeBlock * m_currBlockPtr; //could be NULL
+    SymbolTmpVar * m_tmpvarSymbol;
+
+    UTI checkUsedBeforeDeclared();
+    UlamValue makeUlamValuePtr();
 
   };
 

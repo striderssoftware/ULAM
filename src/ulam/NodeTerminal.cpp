@@ -77,7 +77,7 @@ namespace MFM {
     UTI nuti = getNodeType();
     UlamType * nut = m_state.getUlamTypeByIndex(nuti);
     ULAMTYPE etyp = nut->getUlamTypeEnum();
-    assert(etyp == m_etyp); //true?
+    //assert(etyp == m_etyp); //true? fails as constant value in hazy template (e.g. t41222)
     if(etyp == Bool)
       fp->write((_Bool64ToCbool(m_constant.uval, nut->getBitSize()) ? "true" : "false"));
     else
@@ -154,6 +154,9 @@ namespace MFM {
 
   FORECAST NodeTerminal::safeToCastTo(UTI newType)
   {
+    if(m_state.isAltRefType(newType))
+      return CAST_BAD; //t3965
+
     UTI nuti = getNodeType();
     ULAMTYPE ntypEnum = m_state.getUlamTypeByIndex(nuti)->getUlamTypeEnum();
     UlamType * newut = m_state.getUlamTypeByIndex(newType);
@@ -175,9 +178,6 @@ namespace MFM {
     FORECAST scr = m_state.getUlamTypeByIndex(newType)->UlamType::safeCast(nuti);
     if(scr != CAST_CLEAR)
       return scr;
-
-    if(m_state.isAltRefType(newType))
-      return CAST_BAD; //t3965
 
     return fitsInBits(newType) ? CAST_CLEAR : CAST_BAD;
   } //safeToCastTo
@@ -355,21 +355,20 @@ namespace MFM {
   } //makeTerminalValueForCodeGen
 
   //used during check and label for binary arith and compare ops that have a constant term
-  bool NodeTerminal::fitsInBits(UTI fituti)
+  bool NodeTerminal::fitsInBits(UTI destuti)
   {
     bool rtnb = false;
     UTI nuti = getNodeType(); //constant type
     UlamType * nut = m_state.getUlamTypeByIndex(nuti);
-    UlamType * fit = m_state.getUlamTypeByIndex(fituti);
-    if(!fit->isComplete())
+    UlamType * dest = m_state.getUlamTypeByIndex(destuti);
+    if(!dest->isComplete())
       {
 	std::ostringstream msg;
 	msg << "Unknown size!! constant type: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
-	msg << ", to fit into type: " << m_state.getUlamTypeNameBriefByIndex(fituti).c_str();
+	msg << ", to fit into type: " << m_state.getUlamTypeNameBriefByIndex(destuti).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
-	//m_state.setGoAgain(); //since not an error (t3461)
-	return false;
+	return false; //t3461
       }
     if(nuti == Nav)
       {
@@ -388,31 +387,31 @@ namespace MFM {
 	return false;
       }
 
-    u32 nwordsize = nut->getTotalWordSize();
-    u32 fwordsize = fit->getTotalWordSize();
+    u32 nwordsize = nut->getTotalWordSize(); //from
+    u32 fwordsize = dest->getTotalWordSize(); //to
     if(nwordsize > fwordsize)
       {
 	std::ostringstream msg;
 	msg << "Word size incompatible. Not supported at this time, constant type: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str() << ", to fit into type: ";
-	msg << m_state.getUlamTypeNameBriefByIndex(fituti).c_str();
+	msg << m_state.getUlamTypeNameBriefByIndex(destuti).c_str();
 	fwordsize = nwordsize; //t3851
       }
 
     if(fwordsize <= MAXBITSPERINT) //32
       {
-	rtnb = fitsInBits32(fituti);
+	rtnb = fitsInBits32(destuti);
       }
     else if(fwordsize <= MAXBITSPERLONG) //64
       {
-	rtnb = fitsInBits64(fituti);
+	rtnb = fitsInBits64(destuti);
       }
     else
       {
 	std::ostringstream msg;
 	msg << "Not supported at this time, constant type: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str() << ", to fit into type: ";
-	msg << m_state.getUlamTypeNameBriefByIndex(fituti).c_str();
+	msg << m_state.getUlamTypeNameBriefByIndex(destuti).c_str();
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
 	return false;
       }
@@ -420,7 +419,7 @@ namespace MFM {
   } //fitsInBits
 
   //used during check and label for binary arith and compare ops that have a constant term
-  bool NodeTerminal::fitsInBits32(UTI fituti)
+  bool NodeTerminal::fitsInBits32(UTI destuti)
   {
     bool rtnb = false;
     u32 rtnc = 0;
@@ -435,13 +434,13 @@ namespace MFM {
       {
       case Int:
 	{
-	  u32 cdata = convertForthAndBack((u32) m_constant.uval, fituti);
+	  u32 cdata = convertForthAndBack((u32) m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqInt32((u32) m_constant.uval, cdata, nbitsize);
 	}
 	break;
       case Unsigned:
 	{
-	  u32 cdata = convertForthAndBack((u32) m_constant.uval, fituti);
+	  u32 cdata = convertForthAndBack((u32) m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqUnsigned32((u32) m_constant.uval, cdata, nbitsize);
 	}
 	break;
@@ -449,20 +448,20 @@ namespace MFM {
 	{
 	  //right-justify first
 	  u32 jdata = _Unary32ToUnary32((u32) m_constant.uval, nbitsize, nbitsize);
-	  u32 cdata = convertForthAndBack(jdata, fituti);
+	  u32 cdata = convertForthAndBack(jdata, destuti);
 	  rtnc = _BinOpCompareEqEqUnary32(jdata, cdata, nbitsize);
 	}
 	break;
       case Bits:
 	{
-	  u32 cdata = convertForthAndBack((u32) m_constant.uval, fituti);
+	  u32 cdata = convertForthAndBack((u32) m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqBits32((u32) m_constant.uval, cdata, nbitsize);
 	}
 	break;
       case Bool:
 	{
 	  u32 jdata = _Bool32ToBool32((u32) m_constant.uval, nbitsize, nbitsize);
-	  u32 cdata = convertForthAndBack(jdata, fituti);
+	  u32 cdata = convertForthAndBack(jdata, destuti);
 	  rtnc = _BinOpCompareEqEqBool32(jdata, cdata, nbitsize);
 	}
 	break;
@@ -475,7 +474,7 @@ namespace MFM {
 	  msg << "Constant Type Unknown: ";
 	  msg <<  m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
 	  msg << ", to fit into type: ";
-	  msg << m_state.getUlamTypeNameBriefByIndex(fituti).c_str();
+	  msg << m_state.getUlamTypeNameBriefByIndex(destuti).c_str();
 	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
 	}
       };
@@ -485,7 +484,7 @@ namespace MFM {
   } //fitsInBits32
 
   //used during check and label for binary arith and compare ops that have a constant term
-  bool NodeTerminal::fitsInBits64(UTI fituti)
+  bool NodeTerminal::fitsInBits64(UTI destuti)
   {
     bool rtnb = false;
     u64 rtnc = 0;
@@ -500,13 +499,13 @@ namespace MFM {
       {
       case Int:
 	{
-	  u64 cdata = convertForthAndBackLong(m_constant.uval, fituti);
+	  u64 cdata = convertForthAndBackLong(m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqInt64(m_constant.uval, cdata, nbitsize);
 	}
 	break;
       case Unsigned:
 	{
-	  u64 cdata = convertForthAndBackLong(m_constant.uval, fituti);
+	  u64 cdata = convertForthAndBackLong(m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqUnsigned64(m_constant.uval, cdata, nbitsize);
 	}
 	break;
@@ -514,20 +513,20 @@ namespace MFM {
 	{
 	  //right-justify first
 	  u64 jdata = _Unary64ToUnary64(m_constant.uval, nbitsize, nbitsize);
-	  u64 cdata = convertForthAndBackLong(jdata, fituti);
+	  u64 cdata = convertForthAndBackLong(jdata, destuti);
 	  rtnc = _BinOpCompareEqEqUnary64(jdata, cdata, nbitsize);
 	}
 	break;
       case Bits:
 	{
-	  u64 cdata = convertForthAndBackLong(m_constant.uval, fituti);
+	  u64 cdata = convertForthAndBackLong(m_constant.uval, destuti);
 	  rtnc = _BinOpCompareEqEqBits64(m_constant.uval, cdata, nbitsize);
 	}
 	break;
       case Bool:
 	{
 	  u64 jdata = _Bool64ToBool64(m_constant.uval, nbitsize, nbitsize);
-	  u64 cdata = convertForthAndBackLong(jdata, fituti);
+	  u64 cdata = convertForthAndBackLong(jdata, destuti);
 	  rtnc = _BinOpCompareEqEqBool64(jdata, cdata, nbitsize);
 	}
 	break;
@@ -540,7 +539,7 @@ namespace MFM {
 	  msg << "Constant Type Unknown: ";
 	  msg <<  m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
 	  msg << ", to fit into type: ";
-	  msg << m_state.getUlamTypeNameBriefByIndex(fituti).c_str();
+	  msg << m_state.getUlamTypeNameBriefByIndex(destuti).c_str();
 	  MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
 	}
       };
@@ -549,26 +548,26 @@ namespace MFM {
     return rtnb;
   } //fitsInBits64
 
-  u32 NodeTerminal::convertForthAndBack(const u32 data, UTI fituti)
+  u32 NodeTerminal::convertForthAndBack(const u32 data, UTI destuti)
   {
     UTI nuti = getNodeType();
     UlamValue uv;
     makeTerminalValue(uv, data, nuti);
 
-    //first cast to fit type:
-    bool fb1 = m_state.getUlamTypeByIndex(fituti)->cast(uv, fituti);
+    //first cast to dest type:
+    bool fb1 = m_state.getUlamTypeByIndex(destuti)->cast(uv, destuti);
     //2nd cast back to node type:
     bool fb2 = m_state.getUlamTypeByIndex(nuti)->cast(uv, nuti);
     return ((fb1 && fb2) ? uv.getImmediateData(MAXBITSPERINT, m_state) : ~data);
   } //convertForthAndBack
 
-  u64 NodeTerminal::convertForthAndBackLong(const u64 data, UTI fituti)
+  u64 NodeTerminal::convertForthAndBackLong(const u64 data, UTI destuti)
   {
     UTI nuti = getNodeType();
     UlamValue uv;
     makeTerminalValueLong(uv, data, nuti);
-    //first cast to fit type:
-    bool fb1 = m_state.getUlamTypeByIndex(fituti)->cast(uv, fituti);
+    //first cast to dest type:
+    bool fb1 = m_state.getUlamTypeByIndex(destuti)->cast(uv, destuti);
     //2nd cast back to node type:
     bool fb2 = m_state.getUlamTypeByIndex(nuti)->cast(uv, nuti);
     return ((fb1 && fb2) ? uv.getImmediateDataLong() : ~data);

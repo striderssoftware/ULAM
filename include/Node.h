@@ -121,7 +121,7 @@ namespace MFM{
 
     void setReferenceAble(TBOOL s);
 
-    TBOOL minTBOOL(TBOOL atb, TBOOL btb);
+    static TBOOL minTBOOL(TBOOL atb, TBOOL btb);
 
     Locator getNodeLocation() const;
 
@@ -148,6 +148,8 @@ namespace MFM{
     virtual bool hasASymbolReferenceConstant();
 
     virtual bool isAConstant();
+
+    virtual bool isAConstantClass();
 
     virtual bool isReadyConstant();
 
@@ -181,7 +183,9 @@ namespace MFM{
 
     virtual bool buildDefaultValue(u32 wlen, BV8K& dvref);
 
-    virtual bool initDataMembersConstantValue(BV8K& bvref);
+    virtual bool buildDefaultValueForClassConstantDefs();
+
+    virtual bool initDataMembersConstantValue(BV8K& bvref, BV8K& bvmask);
 
     virtual void genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos);
 
@@ -203,7 +207,7 @@ namespace MFM{
 
     virtual UlamValue makeUlamValuePtr();
 
-    virtual void packBitsInOrderOfDeclaration(u32& offset);
+    virtual TBOOL packBitsInOrderOfDeclaration(u32& offset);
 
     virtual void printUnresolvedVariableDataMembers();
 
@@ -232,6 +236,8 @@ namespace MFM{
     virtual void addMemberDescriptionToInfoMap(UTI classType, ClassMemberMap& classmembers);
 
     virtual void genCodeExtern(File * fp, bool declOnly);
+
+    virtual void genCodeConvertATmpVarIntoBitVector(File * fp, UVPass & uvpass);
 
     /**
      * Returns converted const argument to all capital letters as a string
@@ -283,6 +289,9 @@ namespace MFM{
     //index of last named constant (array) object; o.w.-1
     s32 isCurrentObjectsContainingAConstant();
 
+    //index of last named constant class object; o.w.-1
+    s32 isCurrentObjectsContainingAConstantClass();
+
     //index of first element or ele ref object; o.w. -1
     s32 isCurrentObjectsContainingAnElement();
 
@@ -306,8 +315,6 @@ namespace MFM{
 
     std::string genUlamRefUsageAsString(UTI uti);
 
-    void genCodeConvertATmpVarIntoBitVector(File * fp, UVPass & uvpass);
-
     void genCodeConvertABitVectorIntoATmpVar(File * fp, UVPass & uvpass);
 
     //e.g. when lhs of member select is an array item of class type
@@ -325,6 +332,12 @@ namespace MFM{
     void genCodeReadAutorefIntoATmpVar(File * fp, UVPass& uvpass);
 
     void genCodeReferenceInitialization(File * fp, UVPass& uvpass, Symbol * vsymptr);
+
+    void genCodeReadFromAConstantClassIntoATmpVar(File * fp, UVPass& uvpass);
+
+    void genCodeReadArrayItemFromAConstantClassIntoATmpVarWithConstantIndex(File * fp, UVPass & luvpass, s32 rindex);
+
+    void genCodeReadArrayItemFromAConstantClassIntoATmpVar(File * fp, UVPass & luvpass, UVPass & ruvpass);
 
     virtual void checkForSymbol();
 

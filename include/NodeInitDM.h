@@ -72,7 +72,7 @@ namespace MFM{
 
     virtual UTI constantFold();
 
-    virtual bool buildDefaultValue(u32 wlen, BV8K& dvref);
+    bool initDataMemberConstantValue(BV8K& dvref, BV8K& bvmask);
 
     virtual void genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos);
 
@@ -84,7 +84,7 @@ namespace MFM{
 
     virtual EvalStatus eval();
 
-    virtual void packBitsInOrderOfDeclaration(u32& offset);
+    virtual TBOOL packBitsInOrderOfDeclaration(u32& offset);
 
     virtual void printUnresolvedVariableDataMembers();
 
@@ -108,6 +108,7 @@ namespace MFM{
 
   private:
     UTI m_ofClassUTI;
+    u32 m_posOfDM; //9999 is unreliable
 
   };
 

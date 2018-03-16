@@ -128,6 +128,9 @@ namespace MFM{
 
   private:
     NNO m_currBlockNo;
+    NodeBlock * m_currBlockPtr;
+
+    void setBlock(NodeBlock * ptr);
 
     void setupStackWithPrimitiveForEval(u32 slots);
     void setupStackWithClassForEval(u32 slots);

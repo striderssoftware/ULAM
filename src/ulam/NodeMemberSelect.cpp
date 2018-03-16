@@ -85,6 +85,11 @@ namespace MFM {
     return m_nodeLeft->hasASymbolReferenceConstant();
   }
 
+  bool NodeMemberSelect::isAConstant()
+  {
+    return m_nodeLeft->isAConstant(); //constant classes possible
+  }
+
   const std::string NodeMemberSelect::methodNameForCodeGen()
   {
     return "_MemberSelect_Stub";
@@ -102,15 +107,6 @@ namespace MFM {
     UTI nuti = getNodeType();
     UTI luti = m_nodeLeft->checkAndLabelType(); //side-effect
 
-    TBOOL stor = checkStoreIntoAble();
-    if(m_nodeRight->isFunctionCall())
-      {
-	if(stor == TBOOL_FALSE)
-	  nuti = Nav;
-	else if(stor == TBOOL_HAZY)
-	  nuti = Hzy; //t3607
-      }
-
     if(!m_state.isComplete(luti))
       {
 	std::ostringstream msg;
@@ -120,7 +116,7 @@ namespace MFM {
 	if(luti == Nav)
 	  {
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    nuti = Nav;
+	    nuti = Nav; //error/t3460
 	  }
 	else
 	  {
@@ -133,6 +129,15 @@ namespace MFM {
 	  m_state.setGoAgain();
 	return getNodeType();
       } //done
+
+    TBOOL stor = checkStoreIntoAble();
+    if(m_nodeRight->isFunctionCall())
+      {
+	if(stor == TBOOL_FALSE)
+	  nuti = Nav;
+	else if(stor == TBOOL_HAZY)
+	  nuti = Hzy; //t3607
+      }
 
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
     ULAMCLASSTYPE classtype = lut->getUlamClassType();
@@ -161,7 +166,28 @@ namespace MFM {
     NodeBlockClass * memberClassNode = csym->getClassBlockNode();
     assert(memberClassNode);  //e.g. forgot the closing brace on quark definition
 
-    assert(m_state.okUTItoContinue(memberClassNode->getNodeType())); //t41010, t41145
+    UTI leftblockuti = memberClassNode->getNodeType();
+    if(!m_state.okUTItoContinue(leftblockuti))
+      {
+	std::ostringstream msg;
+	msg << "Member selected is not ready: ";
+	msg << m_state.getUlamTypeNameBriefByIndex(luti).c_str();
+	if(leftblockuti == Nav)
+	  {
+	    m_state.abortShouldntGetHere(); //because luti is complete!
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+	    setNodeType(Nav);
+	    return Nav;
+	  }
+	else
+	  {
+	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
+	    setNodeType(Hzy);
+	    m_state.setGoAgain();
+	    return Hzy; //t41222, inheritance
+	  }
+      }
+    //else //t41010, t41145
 
    //set up compiler state to use the member class block for symbol searches
     m_state.pushClassContextUsingMemberClassBlock(memberClassNode);
@@ -269,6 +295,13 @@ namespace MFM {
 
     if(nuti == Hzy)
       return NOTREADY;
+
+    if(m_nodeLeft->isAConstant())
+      {
+	//probably need evaltostoreinto for rhs, since not DM.
+	//m_state.abortNotImplementedYet(); //t41198, t41209, t41217
+	//return UNEVALUABLE;
+      }
 
     evalNodeProlog(0); //new current frame pointer on node eval stack
 
@@ -518,6 +551,7 @@ namespace MFM {
 	UTI cosuti = cossym->getUlamTypeIdx();
 	UlamType * cosut = m_state.getUlamTypeByIndex(cosuti);
 	//t3913, t3915 tmpref may not be a ref, but may need adjusting (i.e. anonymous element returned)
+	// t3706 not isAltRefType
 	rtnb = (!cosut->isReference() && (!cossym->isTmpVarSymbol() || Node::needAdjustToStateBits(cosuti)));
       }
     return rtnb;

@@ -61,17 +61,18 @@ namespace MFM {
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
     ULAMTYPE letyp = lut->getUlamTypeEnum();
     ULAMCLASSTYPE lclasstype = lut->getUlamClassType();
-    if(!(m_state.isAtom(luti) || (letyp == Class)))
+
+    if(!lut->isScalar())
       {
 	std::ostringstream msg;
 	msg << "Invalid lefthand type of conditional operator '" << getName();
-	msg << "'; must be an atom or class, not ";
-	msg << lut->getUlamTypeNameBrief().c_str();
+	msg << "'; must be a scalar";
+	if(!m_state.isHolder(luti))
+	  msg << ", not " << lut->getUlamTypeNameBrief().c_str() << " array";
 	if(lclasstype == UC_UNSEEN || luti == Hzy)
 	  {
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 	    newType = Hzy;
-	    m_state.setGoAgain();
 	  }
 	else
 	  {
@@ -82,17 +83,17 @@ namespace MFM {
 	  }
       }
 
-    if(!lut->isScalar())
+    if(!(m_state.isAtom(luti) || (letyp == Class)))
       {
 	std::ostringstream msg;
 	msg << "Invalid lefthand type of conditional operator '" << getName();
-	msg << "'; must be a scalar, not ";
-	msg << lut->getUlamTypeNameBrief().c_str() << " array";
+	msg << "'; must be an atom or class";
+	if(!m_state.isHolder(luti))
+	  msg << ", not " << lut->getUlamTypeNameBrief().c_str();
 	if(lclasstype == UC_UNSEEN || luti == Hzy)
 	  {
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 	    newType = Hzy;
-	    m_state.setGoAgain();
 	  }
 	else
 	  {
@@ -120,12 +121,12 @@ namespace MFM {
       {
 	UlamType * rut = m_state.getUlamTypeByIndex(ruti);
 	//rhs cannot be a ref type
-	if(rut->isReference())
+	if(rut->isAltRefType())
 	  {
 	    std::ostringstream msg;
 	    msg << "Invalid righthand type of conditional operator '" << getName();
 	    msg << "'; must be a class type, not a reference: ";
-	    msg << rut->getUlamTypeNameBrief().c_str();
+	    msg << m_state.getUlamTypeNameBriefByIndex(ruti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
 	    newType = Nav;
 	  }
@@ -139,12 +140,11 @@ namespace MFM {
 		    std::ostringstream msg;
 		    msg << "Invalid righthand type of conditional operator '" << getName();
 		    msg << "'; must be a quark or element name, not ";
-		    msg << rut->getUlamTypeNameBrief().c_str();
+		    msg << m_state.getUlamTypeNameBriefByIndex(ruti).c_str();
 		    if(rclasstype == UC_UNSEEN)
 		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			newType = Hzy;
-			m_state.setGoAgain();
 		      }
 		    else
 		      {
@@ -160,12 +160,11 @@ namespace MFM {
 		    std::ostringstream msg;
 		    msg << "Invalid righthand type of conditional operator '" << getName();
 		    msg << "'; must be a quark or transient name, not ";
-		    msg << rut->getUlamTypeNameBrief().c_str();
+		    msg << m_state.getUlamTypeNameBriefByIndex(ruti).c_str();
 		    if(rclasstype == UC_UNSEEN)
 		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			newType = Hzy;
-			m_state.setGoAgain();
 		      }
 		    else
 		      {
@@ -188,7 +187,6 @@ namespace MFM {
 		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			newType = Hzy;
-			m_state.setGoAgain();
 		      }
 		    else
 		      {
@@ -196,6 +194,15 @@ namespace MFM {
 			newType = Nav;
 		      }
 		  }
+	      }
+	    else if(lclasstype == UC_UNSEEN)
+	      {
+		std::ostringstream msg;
+		msg << "Lefthand type of conditional operator '" << getName();
+		msg << "'; not a seen class ";
+		msg << lut->getUlamTypeNameBrief().c_str();
+		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
+		newType = Hzy;
 	      }
 	    else
 	      m_state.abortUndefinedUlamClassType();
@@ -210,10 +217,11 @@ namespace MFM {
 	msg << ", is still incomplete";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 	newType = Hzy; //goagain set by nodetypedesc
-	m_state.setGoAgain();
       }
 
     setNodeType(newType);
+    if(newType == Hzy)
+      m_state.setGoAgain();
     Node::setStoreIntoAble(TBOOL_FALSE);
     return getNodeType();
   } //checkAndLabelType
@@ -285,7 +293,7 @@ namespace MFM {
 		    std::ostringstream msg;
 		    msg << "Invalid lefthand type of conditional operator '" << getName();
 		    msg << "'; Class '";
-		    msg << lut->getUlamTypeNameBrief().c_str();
+		    msg << lut->getUlamTypeClassNameBrief(luti).c_str();
 		    msg << "' Not Found during eval";
 		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
 		  }
@@ -360,7 +368,7 @@ namespace MFM {
     UTI lnuti = m_nodeLeft->getNodeType();
     if(m_state.isAtom(lnuti))
       return genCodeAtomAs(fp, uvpass); //reads into tmpvar
-    else if(m_state.isReference(lnuti))
+    else if(m_state.isAltRefType(lnuti))
       return genCodeReferenceAs(fp, uvpass); //doesn't read into tmpvar
     //else ClassAs.. reads into tmp var.
 
@@ -373,7 +381,7 @@ namespace MFM {
 
     UTI ruti = getRightType();
     UlamType * rut = m_state.getUlamTypeByIndex(ruti);
-    assert(!rut->isReference());
+    assert(!rut->isAltRefType());
 
     s32 tmpVarIs = m_state.getNextTmpVarNumber();
 
@@ -419,7 +427,7 @@ namespace MFM {
 
     UTI ruti = getRightType();
     UlamType * rut = m_state.getUlamTypeByIndex(ruti);
-    assert(!rut->isReference());
+    assert(!rut->isAltRefType());
 
     s32 tmpVarIs = m_state.getNextTmpVarNumber();
 
@@ -469,7 +477,7 @@ namespace MFM {
     UVPass luvpass;
     m_nodeLeft->genCodeToStoreInto(fp, luvpass); //loads lhs into tmp (T)
     UTI luti = luvpass.getPassTargetType(); //replace
-    assert(m_state.isReference(luti));
+    assert(m_state.isAltRefType(luti));
 
     Symbol * stgcos = NULL;
     if(m_state.m_currentObjSymbolsForCodeGen.empty())
@@ -479,7 +487,7 @@ namespace MFM {
 
     UTI ruti = getRightType();
     UlamType * rut = m_state.getUlamTypeByIndex(ruti);
-    assert(!rut->isReference());
+    assert(!rut->isAltRefType());
 
     s32 tmpVarIs = m_state.getNextTmpVarNumber();
 

@@ -83,6 +83,8 @@ namespace MFM{
 
     virtual bool getNodeTypeDescriptorPtr(NodeTypeDescriptor *& nodetypedescref);
 
+    bool setNodeTypeDescriptor(NodeTypeDescriptor * nodetypedesc);
+
     virtual bool hasDefaultSymbolValue();
 
     virtual UTI checkAndLabelType();
@@ -99,11 +101,15 @@ namespace MFM{
 
     virtual bool hasConstantExpr();
 
+    virtual bool isReadyConstant();
+
     virtual UTI foldConstantExpression();
 
     virtual bool foldArrayInitExpression();
 
     virtual bool buildDefaultValue(u32 wlen, BV8K& dvref);
+
+    virtual bool buildDefaultValueForClassConstantDefs();
 
     virtual void genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos);
 
@@ -113,9 +119,11 @@ namespace MFM{
 
     virtual bool assignClassArgValueInStubCopy();
 
+    bool cloneTypeDescriptorForPendingArgumentNode(NodeConstantDef * templateparamdef);
+
     virtual EvalStatus eval();
 
-    virtual void packBitsInOrderOfDeclaration(u32& offset);
+    virtual TBOOL packBitsInOrderOfDeclaration(u32& offset);
 
     virtual void printUnresolvedVariableDataMembers();
 
@@ -147,8 +155,12 @@ namespace MFM{
 
   private:
     NNO m_currBlockNo;
+    NodeBlock * m_currBlockPtr;
+
+    void setBlock(NodeBlock * ptr);
 
     void setupStackWithPrimitiveForEval(u32 slots);
+    void setupStackWithConstantClassForEval(u32 slots);
     void assignConstantSlotIndex(u32& cslotidx);
 
   };

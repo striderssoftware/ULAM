@@ -8,7 +8,7 @@ namespace MFM{
 
   NodeListClassInit::NodeListClassInit(UTI cuti, u32 classvarid, CompilerState & state) : NodeList(state), m_classUTI(cuti), m_classvarId(classvarid) { }
 
-  NodeListClassInit::NodeListClassInit(const NodeListClassInit & ref) : NodeList(ref), m_classUTI(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_classUTI)), m_classvarId(ref.m_classvarId) { }
+  NodeListClassInit::NodeListClassInit(const NodeListClassInit & ref) : NodeList(ref), m_classUTI(m_state.mapIncompleteUTIForCurrentClassInstance(ref.m_classUTI,ref.getNodeLocation())), m_classvarId(ref.m_classvarId) { }
 
   NodeListClassInit::~NodeListClassInit() { }
 
@@ -124,6 +124,7 @@ namespace MFM{
 	    msg << m_state.getUlamTypeNameBriefByIndex(nuti).c_str();
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT); //t41170
 	    Node::setNodeType(Hzy);
+	    m_state.setGoAgain(); //missing
 	    return Hzy;
 	  }
       }
@@ -149,12 +150,12 @@ namespace MFM{
 	else if((rtnuti != Nav) && !m_state.isComplete(puti))
 	  {
 	    rtnuti = Hzy; // all or none
-	    m_state.setGoAgain(); //since no error msg
 	  }
 	//else rtnuti remains == m_classUTI
       }
-
     setNodeType(rtnuti);
+    if(rtnuti == Hzy)
+      m_state.setGoAgain(); //since no error msg
     return rtnuti;
   } //checkAndLabelType
 
@@ -186,6 +187,9 @@ namespace MFM{
   {
     for(u32 i = 0; i < m_nodes.size(); i++)
       ((NodeInitDM *) m_nodes[i])->foldConstantExpression();
+
+    m_state.tryToPackAClass(m_classUTI); //t41198 here?
+
     return Node::getNodeType();
   }
 
@@ -237,13 +241,15 @@ namespace MFM{
     m_state.abortShouldntGetHere();
   }
 
-  bool NodeListClassInit::initDataMembersConstantValue(BV8K& bvref)
+  bool NodeListClassInit::initDataMembersConstantValue(BV8K& bvref, BV8K& bvmask)
   {
     //bvref contains default value at pos 0 of our m_forClassUTI.
     bool rtnok = true;
     for(u32 i = 0; i < m_nodes.size(); i++)
       {
-	rtnok &= ((NodeInitDM *) m_nodes[i])->buildDefaultValue(0, bvref); //first arg dummy
+	rtnok &= ((NodeInitDM *) m_nodes[i])->initDataMemberConstantValue(bvref, bvmask);
+	if(!rtnok)
+	  break;
       }
     return rtnok;
   }

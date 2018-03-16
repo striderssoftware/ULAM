@@ -168,15 +168,59 @@ namespace MFM {
 			  {
 			    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			    newType = Hzy;
-			    m_state.setGoAgain();
 			    hazyCount++;
 			  }
 		      }
 		  }
 	      }
 	  }
-	//else
-	// arraysize is zero! not accessible. runtime check
+	else
+	  {
+	    // arraysize is zero! not accessible. runtime check
+	    // unless the index is a "ready" constant
+	    if(m_nodeRight->isAConstant())
+	      {
+		s32 rindex;
+		UTI rt;
+		if(!getArraysizeInBracket(rindex,rt))
+		  {
+		    std::ostringstream msg;
+		    msg << "Erroneous constant array item specifier for ";
+		    msg << m_nodeLeft->getName() << " type: ";
+		    msg << m_state.getUlamTypeNameByIndex(leftType).c_str();
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+		    setNodeType(Nav);
+		    return Nav;
+		  }
+		else if(!m_state.okUTItoContinue(rt) || !m_state.isComplete(rt) || !m_state.isComplete(leftType))
+		  {
+		    std::ostringstream msg;
+		    msg << "Constant array item specifier may be out-of-bounds for ";
+		    msg << m_nodeLeft->getName();
+		    msg << m_state.getUlamTypeNameByIndex(leftType).c_str();
+		    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
+		    setNodeType(Hzy);
+		    m_state.setGoAgain();
+		    return Hzy;
+		  }
+		else
+		  {
+		    s32 arraysize = m_state.getArraySize(leftType);
+		    assert(arraysize >= 0);
+		    if(rindex > arraysize)
+		      {
+			std::ostringstream msg;
+			msg << "Constant array item specifier (" << rindex;
+			msg << ") for " << m_nodeLeft->getName();
+			msg << " is OUT-OF-BOUNDS; type: ";
+			msg << m_state.getUlamTypeNameByIndex(leftType).c_str();
+			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
+			setNodeType(Nav);
+			return Nav;
+		      }
+		  }
+	      }
+	  }
 
 	//set up idxuti..RHS
 	//cant proceed with custom array subscript if lhs is incomplete
@@ -197,7 +241,6 @@ namespace MFM {
 		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			idxuti = Hzy;
-			m_state.setGoAgain();
 			hazyCount++;
 		      }
 		    else
@@ -218,7 +261,6 @@ namespace MFM {
 		      {
 			MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), WAIT);
 			idxuti = Hzy;
-			m_state.setGoAgain();
 			hazyCount++;
 		      }
 		    else
@@ -312,14 +354,15 @@ namespace MFM {
 	if(errorCount != 0)
 	  newType = Nav;
 	else if(hazyCount != 0)
-	  {
-	    newType = Hzy;
-	    m_state.setGoAgain(); //covers non-error(debug) messages for incompletes
-	  }
+	  newType = Hzy;
 	else
 	  m_state.abortShouldntGetHere();
       }
+
     setNodeType(newType);
+    if(newType == Hzy)
+      m_state.setGoAgain(); //covers non-error(debug) messages for incompletes
+
     return newType;
   } //checkAndLabelType
 
@@ -632,6 +675,7 @@ namespace MFM {
     s32 offsetInt = m_state.getUlamTypeByIndex(offset.getUlamValueTypeIdx())->getDataAsCs32(offsetdata);
     //adjust pos by offset * len, according to its scalar type
     UlamValue scalarPtr = UlamValue::makeScalarPtr(pluv, m_state);
+
     if(scalarPtr.incrementPtr(m_state, offsetInt))
       //copy result UV to stack, -1 relative to current frame pointer
       Node::assignReturnValuePtrToStack(scalarPtr);
@@ -773,7 +817,9 @@ namespace MFM {
 	return true;
       }
 
-    sizetype = m_nodeRight->checkAndLabelType();
+    //    sizetype = m_nodeRight->getNodeType(); //checkAndLabelType(); was c&l??? t3504
+    //if(!m_state.okUTItoContinue(sizetype))
+      sizetype = m_nodeRight->checkAndLabelType();
     if((sizetype == Nav))
       {
 	rtnArraySize = UNKNOWNSIZE;
@@ -848,9 +894,38 @@ namespace MFM {
       {
 	return genCodeAUserStringByte(fp, uvpass);
       }
+    else if(Node::isCurrentObjectsContainingAConstantClass() >= 0)
+      {
+	if(m_nodeRight->isAConstant())
+	  {
+	    s32 rindex;
+	    UTI rt;
+	    if(getArraysizeInBracket(rindex,rt)) //t41198
+	      {
+		assert((rindex >= 0) && (rindex < m_state.getArraySize(leftType))); //catchable during c&l
+		UVPass luvpass = uvpass; //t3615 passes along if rhs of memberselect
+		m_nodeLeft->genCodeToStoreInto(fp, luvpass);
+		Node::genCodeReadArrayItemFromAConstantClassIntoATmpVarWithConstantIndex(fp, luvpass, rindex);
+		uvpass = luvpass;
+	      }
+	    else
+	      {
+		//error, msg? UNKNOWN?
+		m_state.abortShouldntGetHere();
+	      }
+	  }
+	else
+	  {
+	    genCodeToStoreInto(fp, uvpass); //t41198
+	    m_state.clearCurrentObjSymbolsForCodeGen();
+	  }
+	return;
+      }
+    //else
 
     genCodeToStoreInto(fp, uvpass);
-    if(!isString || m_state.isReference(uvpass.getPassTargetType())) //t3953, t3973
+
+    if(!isString || m_state.isReference(uvpass.getPassTargetType())) //t3953,t3973, not isAltRefType t3908
       Node::genCodeReadIntoATmpVar(fp, uvpass); //splits on array item
     else
       m_state.clearCurrentObjSymbolsForCodeGen();
@@ -894,9 +969,17 @@ namespace MFM {
     Symbol * cossym = m_state.m_currentObjSymbolsForCodeGen.back();
 
     assert(!m_state.isScalar(cossym->getUlamTypeIdx()));
+    if(Node::isCurrentObjectsContainingAConstantClass() >= 0)
+      {
+	Node::genCodeReadArrayItemFromAConstantClassIntoATmpVar(fp, luvpass, offset);
+	uvpass = luvpass;
+	return; //no tmpvarsymbol?
+      }
+
     if(cossym->isConstant())
       {
-	Node::genCodeConvertATmpVarIntoConstantAutoRef(fp, luvpass, offset); //luvpass becomes the autoref, and clears stack
+	//luvpass becomes the autoref, and clears stack
+	Node::genCodeConvertATmpVarIntoConstantAutoRef(fp, luvpass, offset);
 
 	UTI leftType = m_nodeLeft->getNodeType();
 	UlamType * lut = m_state.getUlamTypeByIndex(leftType);
@@ -1098,10 +1181,6 @@ namespace MFM {
     uvpass = UVPass::makePass(tmpVarNum, TMPREGISTER, ASCII, m_state.determinePackable(ASCII), m_state, 0, 0); //POS 0 rightjustified (atom-based).
 
     m_state.clearCurrentObjSymbolsForCodeGen();
-
-    //m_tmpvarSymbol = Node::makeTmpVarSymbolForCodeGen(uvpass, NULL); //dm to avoid leaks
-    //m_state.m_currentObjSymbolsForCodeGen = saveCOSVector; //restore the prior stack
-    //m_state.m_currentObjSymbolsForCodeGen.push_back(m_tmpvarSymbol);
     // NO RESTORE -- up to caller for lhs.
   } //genCodeAUserStringByte
 
