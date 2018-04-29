@@ -40,7 +40,7 @@ namespace MFM {
       {
 	UTI cuti = m_state.getCompileThisIdx();
 	StringPoolUser& classupool = m_state.getUPoolRefForClass(cuti);
-	u32 regid = m_constant.uval >> REGNUMBITS;
+	u32 regid = m_constant.uval >> STRINGIDXBITS;
 	if((regid != 0) && m_state.isALocalsFileScope(regid))
 	  {
 	    return; //t3981
@@ -59,7 +59,7 @@ namespace MFM {
 	  m_state.abortShouldntGetHere();
 
 	u32 newclassstringidx = classupool.getIndexForDataString(str);
-	m_constant.uval = (cuti << REGNUMBITS) | (newclassstringidx & STRINGIDXMASK); //combined index
+	m_constant.uval = (cuti << STRINGIDXBITS) | (newclassstringidx & STRINGIDXMASK); //combined index
       }
   }
 
@@ -231,14 +231,11 @@ namespace MFM {
   EvalStatus NodeTerminal::eval()
   {
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
-    if(!m_state.isComplete(nuti))
-      return NOTREADY;
+    if(!m_state.isComplete(nuti)) return evalStatusReturnNoEpilog(NOTREADY);
 
     EvalStatus evs = NORMAL; //init ok
     evalNodeProlog(0); //new current frame pointer
@@ -247,11 +244,12 @@ namespace MFM {
     evs = makeTerminalValue(rtnUV);
 
     //copy result UV to stack, -1 relative to current frame pointer
-    if(evs == NORMAL)
-      Node::assignReturnValueToStack(rtnUV);
+    if(evs != NORMAL) return evalStatusReturn(evs);
+
+    Node::assignReturnValueToStack(rtnUV);
 
     evalNodeEpilog();
-    return evs;
+    return NORMAL;
   } //eval
 
   EvalStatus NodeTerminal::makeTerminalValue(UlamValue& uvarg)
@@ -678,7 +676,7 @@ namespace MFM {
 
     if(UlamType::compareForString(nuti, m_state) == UTIC_SAME)
       {
-	UTI cuti = (m_constant.uval >> REGNUMBITS);
+	UTI cuti = (m_constant.uval >> STRINGIDXBITS);
 	u32 sidx = (m_constant.uval & STRINGIDXMASK);
 	assert((cuti > 0) && (sidx > 0));
 	//String, String array or array item (t3929, t3950)
@@ -767,7 +765,7 @@ namespace MFM {
 	    {
 	      StringPoolUser& classupool = m_state.getUPoolRefForClass(cuti);
 	      u32 classstringidx = classupool.getIndexForDataString(m_state.m_tokenupool.getDataAsString(tok.m_dataindex));
-	      m_constant.uval = (cuti << REGNUMBITS) | (classstringidx & STRINGIDXMASK); //combined index
+	      m_constant.uval = (cuti << STRINGIDXBITS) | (classstringidx & STRINGIDXMASK); //combined index
 	      rtnok = true;
 	    }
 	}

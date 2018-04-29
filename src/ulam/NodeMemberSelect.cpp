@@ -1,4 +1,5 @@
 #include "NodeMemberSelect.h"
+#include "SymbolVariableDataMember.h"
 #include "CompilerState.h"
 
 namespace MFM {
@@ -140,15 +141,15 @@ namespace MFM {
       }
 
     UlamType * lut = m_state.getUlamTypeByIndex(luti);
-    ULAMCLASSTYPE classtype = lut->getUlamClassType();
-    if(((classtype == UC_NOTACLASS) && (lut->getUlamTypeEnum() != Holder)) || !lut->isScalar())
+    ULAMCLASSTYPE lclasstype = lut->getUlamClassType();
+    if(((lclasstype == UC_NOTACLASS) && (lut->getUlamTypeEnum() != Holder)) || !lut->isScalar())
       {
 	// must be a scalar 'Class' type, (e.g. error/t3815)
 	// doesn't complete checkandlabel for rhs (e.g. funccall is NULL, no eval)
 	std::ostringstream msg;
 	msg << "Member selected must be a Class, not type: ";
 	msg << m_state.getUlamTypeNameBriefByIndex(luti).c_str();
-	if(classtype != UC_NOTACLASS)
+	if(lclasstype != UC_NOTACLASS)
 	  msg << "[" << lut->getArraySize() << "]";
 	if(m_state.isAtom(luti))
 	  msg << "; suggest using a Conditional-As";
@@ -205,6 +206,77 @@ namespace MFM {
       }
     return getNodeType();
   } //checkAndLabelType
+
+  bool NodeMemberSelect::getConstantMemberValue(BV8K& bvmsel)
+  {
+    bool rtnok = false;
+    //vs t41232, t41263
+    //righthand member of constant class (t41273); left is complete, we know.
+    assert(m_nodeLeft->isAConstant());
+    UTI leftType = m_nodeLeft->getNodeType();
+    assert(m_state.isAClass(leftType));
+    assert(m_state.isComplete(leftType));
+    UlamType * lut = m_state.getUlamTypeByIndex(leftType);
+    ULAMCLASSTYPE lclasstype = lut->getUlamClassType();
+    UTI rightType = m_nodeRight->getNodeType();
+    UlamType * rut = m_state.getUlamTypeByIndex(rightType);
+
+    //rhs could be a class/array, primitive/array; whatever it is a constant!
+    //replace rhs with a constant node version of it, using the value found in lhs.
+    assert(!m_nodeRight->isAList());
+    assert(!m_nodeRight->isFunctionCall());
+    if(!m_nodeRight->isAConstant())
+      {
+	Symbol * sym = NULL;
+	if(m_nodeRight->getSymbolPtr(sym))
+	  {
+	    assert(sym->isDataMember());
+	    SymbolVariableDataMember * dmsym = (SymbolVariableDataMember *) sym;
+	    u32 rpos = 9999;
+	    if(!dmsym->isPosOffsetReliable())
+	      {
+		TBOOL packed = m_state.tryToPackAClass(leftType);
+		if(packed == TBOOL_TRUE)
+		  {
+		    m_nodeRight->getSymbolPtr(sym); //refresh
+		    dmsym = (SymbolVariableDataMember *) sym;
+		    rpos = dmsym->getPosOffset();
+		  }
+		//else cannot pack yet
+	      }
+	    else
+	      rpos = dmsym->getPosOffset();
+
+	    //okay to fold (possible refactor TODO); Element Types and Strings still un-fixed.
+	    if(rpos != 9999)
+	      {
+		if(lclasstype == UC_ELEMENT)
+		  rpos += ATOMFIRSTSTATEBITPOS;
+
+		BV8K bvcctmp;
+		bool gotVal = m_nodeLeft->getConstantValue(bvcctmp);
+
+		if(gotVal)
+		  {
+		    u32 rlen = rut->getSizeofUlamType();
+		    bvcctmp.CopyBV(rpos, 0, rlen, bvmsel);
+		    rtnok = true;
+		  } //no left class value
+	      } //rpos not reliable
+	  } //no right symbol ptr
+      }
+    else
+      {
+	//right is a constant (t41278)
+	rtnok = m_nodeRight->getConstantValue(bvmsel);
+      }
+    return rtnok;
+  } //getConstantMemberValue
+
+  bool NodeMemberSelect::getConstantValue(BV8K& bval)
+  {
+    return getConstantMemberValue(bval);
+  }
 
   TBOOL NodeMemberSelect::checkStoreIntoAble()
   {
@@ -290,11 +362,9 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     if(m_nodeLeft->isAConstant())
       {
@@ -310,11 +380,7 @@ namespace MFM {
 
     makeRoomForSlots(1); //always 1 slot for ptr
     EvalStatus evs = m_nodeLeft->evalToStoreInto();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     //UPDATE selected member (i.e. element or quark) before eval of rhs
     //(i.e. data member or func call); e.g. Ptr to atom
@@ -341,23 +407,21 @@ namespace MFM {
 
     u32 slot = makeRoomForNodeType(nuti);
     evs = m_nodeRight->eval(); //a Node Function Call here, or data member eval
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     //assigns rhs to lhs UV pointer (handles arrays);
     //also copy result UV to stack, -1 relative to current frame pointer
     if(slot) //avoid Void's
       if(!doBinaryOperation(1, 1+slot, slot))
-	evs = ERROR;
+	return evalStatusReturn(ERROR); //skip restore now, ok???
 
     m_state.m_currentObjPtr = saveCurrentObjectPtr; //restore current object ptr
     m_state.m_currentSelfPtr = saveCurrentSelfPtr; //restore current self ptr
 
+    if(evs != NORMAL) return evalStatusReturn(evs);
+
     evalNodeEpilog();
-    return evs;
+    return NORMAL;
   } //eval
 
   //for eval, want the value of the rhs
@@ -395,11 +459,9 @@ namespace MFM {
   EvalStatus NodeMemberSelect::evalToStoreInto()
   {
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     evalNodeProlog(0);
 
@@ -407,11 +469,7 @@ namespace MFM {
 
     makeRoomForSlots(1); //always 1 slot for ptr
     EvalStatus evs = m_nodeLeft->evalToStoreInto();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     //UPDATE selected member (i.e. element or quark) before eval of rhs
     // (i.e. data member or func call)
@@ -429,11 +487,7 @@ namespace MFM {
 
     makeRoomForSlots(1); //always 1 slot for ptr
     evs = m_nodeRight->evalToStoreInto();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue ruvPtr = m_state.m_nodeEvalStack.loadUlamValuePtrFromSlot(2);
 

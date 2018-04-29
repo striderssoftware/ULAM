@@ -380,7 +380,6 @@ namespace MFM{
 	//propagate last value for any remaining items not initialized
 	if(n < (u32) arraysize)
 	  {
-	    //u32 itemlen = nut->getBitSize();
 	    UTI scalaruti = m_state.getUlamTypeAsScalar(nuti);
 	    u32 itemlen = m_state.getUlamTypeByIndex(scalaruti)->getSizeofUlamType();
 
@@ -403,8 +402,7 @@ namespace MFM{
     UTI scalaruti = m_state.getUlamTypeAsScalar(nuti);
     UlamType * scalarut = m_state.getUlamTypeByIndex(scalaruti);
     u32 itemlen = scalarut->getSizeofUlamType();
-    ULAMCLASSTYPE classtype = scalarut->getUlamClassType();
-    u32 adjust = (classtype == UC_ELEMENT ? ATOMFIRSTSTATEBITPOS : 0);
+    u32 adjust = 0; //(classtype == UC_ELEMENT ? ATOMFIRSTSTATEBITPOS : 0);
 
     BV8K bvclass;
     if(m_nodes[n]->isAConstantClass())
@@ -456,21 +454,8 @@ namespace MFM{
     AssertBool gotSymbol = parentNode->getSymbolPtr((Symbol *&) vsym);
     assert(gotSymbol);
 
-    bool aok = true;
     BV8K dval;
-    if(vsym->isReady())
-      {
-	AssertBool gotValue = vsym->getValue(dval);
-	assert(gotValue);
-      }
-    else if(vsym->hasInitValue())
-      {
-	AssertBool gotInitVal = vsym->getInitValue(dval);
-	assert(gotInitVal);
-      }
-    else
-      aok = false;
-
+    AssertBool aok = vsym->getValueReadyToPrint(dval);
     assert(aok);
 
     bool isString = (nut->getUlamTypeEnum() == String);
@@ -485,7 +470,6 @@ namespace MFM{
 	dval.ToArray(uvals); //the magic! (32-bit ints)
 
 	UTI cuti = m_state.getCompileThisIdx();
-	const std::string stringmangledName = m_state.getUlamTypeByIndex(String)->getLocalStorageTypeAsString();
 
 	m_state.indentUlamCode(fp); //non-const
 	fp->write("static bool ");
@@ -526,7 +510,7 @@ namespace MFM{
 	    fp->write_decimal_unsigned(w); // proper length == [nwords]
 	    fp->write("] = ");
 
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::makeCombinedIdx(Uh_6regnum, ");
 	    fp->write_decimal_unsigned(uvals[w] & STRINGIDXMASK);
 	    fp->write("); //");
@@ -623,7 +607,7 @@ namespace MFM{
 	// read each item value from within its uvpass (t41170)
 	s32 tmpVarNum4 = m_state.getNextTmpVarNumber();
 
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	fp->write("const ");
 	fp->write(nut->getArrayItemTmpStorageTypeAsString().c_str());
 	fp->write(" ");
@@ -641,7 +625,7 @@ namespace MFM{
 
 
 	s32 tmpVarNum = m_state.getNextTmpVarNumber();
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	fp->write(scalarut->getLocalStorageTypeAsString().c_str());
 	fp->write(" ");
 	fp->write(m_state.getTmpVarAsString(scalaruti, tmpVarNum, scalarcstor).c_str());
@@ -682,7 +666,7 @@ namespace MFM{
       m_nodes[useitem]->genCode(fp, uvpass2);
 
     //uvpass has the tmp var of the default immediate class array
-    m_state.indent(fp);
+    m_state.indentUlamCode(fp);
     fp->write(uvpass.getTmpVarAsString(m_state).c_str()); //immediate class storage
     fp->write(".writeArrayItem("); //e.g. writeArrayItem
     fp->write(uvpass2.getTmpVarAsString(m_state).c_str()); //tmp storage, read?
@@ -709,7 +693,6 @@ namespace MFM{
     u32 n = m_nodes.size();
     assert(n > 0);
     assert(m_nodes[0]->isClassInit()); //what if class constant?
-    //u32 itemlen = m_state.getBitSize(nuti);
     u32 itemlen = m_state.getUlamTypeByIndex(scalaruti)->getSizeofUlamType(); //atom-based for element as data member
 
     bool rtnok = true;
@@ -720,7 +703,7 @@ namespace MFM{
 	rtnok &= ((NodeListClassInit *) m_nodes[i])->initDataMembersConstantValue(bvtmp, bvmask);
 	if(rtnok)
 	  {
-	    bvtmp.CopyBV<8192>(0, i * itemlen, itemlen, bvref); //fm pos, to pos, len, dest (t41185)
+	    bvtmp.CopyBV(0, i * itemlen, itemlen, bvref); //fm pos, to pos, len, dest (t41185)
 	    bvmask.SetBits(i * itemlen, itemlen); //startpos, len
 	  }
 	  else

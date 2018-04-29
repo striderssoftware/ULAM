@@ -76,12 +76,12 @@ namespace MFM {
     return true;
   }
 
-  void NodeModelParameterDef::genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos)
+  void NodeModelParameterDef::genCodeDefaultValueOrTmpVarStringRegistrationNumber(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr)
   {
     return;
   }
 
-  void NodeModelParameterDef::genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos)
+  void NodeModelParameterDef::genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr)
   {
     return;
   }

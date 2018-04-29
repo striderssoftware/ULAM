@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include "NodeConstantClass.h"
 #include "NodeInitDM.h"
 #include "NodeListArrayInitialization.h"
 #include "NodeListClassInit.h"
@@ -67,8 +66,7 @@ namespace MFM {
 
   void NodeInitDM::resetOfClassType(UTI cuti)
   {
-    assert(m_state.okUTItoContinue(cuti));
-    //assert(m_state.isComplete(cuti)); t41169
+    assert(m_state.okUTItoContinue(cuti)); //maybe not complete (t41169)
     m_ofClassUTI = cuti;
   }
 
@@ -410,7 +408,8 @@ namespace MFM {
 	  return Nav;
       }
 
-    //scalar classes wait until after c&l to build default value; but pieces can be folded in advance
+    //scalar classes wait until after c&l to build default value;
+    //but pieces can be folded in advance
     assert(m_nodeExpr);
     if(m_nodeExpr->isClassInit())
       return ((NodeListClassInit *) m_nodeExpr)->foldConstantExpression();
@@ -439,7 +438,11 @@ namespace MFM {
       return false;
 
     u32 pos = symptr->getPosOffset();
-    m_posOfDM = pos;
+
+    m_posOfDM = pos; //don't include the element adjustment (t41176)
+
+    if(m_state.getUlamTypeByIndex(m_ofClassUTI)->getUlamClassType() == UC_ELEMENT)
+      pos += ATOMFIRSTSTATEBITPOS; //t41230
 
     UTI nuti = m_constSymbol->getUlamTypeIdx();
     assert(UlamType::compare(nuti, getNodeType(), m_state) == UTIC_SAME);
@@ -467,18 +470,18 @@ namespace MFM {
 	  }
 	else if(!m_state.isScalar(nuti))
 	  {
-	    rtnok = (((NodeListArrayInitialization *) m_nodeExpr)->buildClassArrayValueInitialization(bvclass)); //at pos 0 (t41170)
+	    rtnok = (((NodeListArrayInitialization *) m_nodeExpr)->buildClassArrayValueInitialization(bvclass)); //at pos 0 (t41170), BUT adjusted for elements (t41263)!!!
 	  }
 	else if(m_nodeExpr->isAConstantClass())
 	  {
-	    rtnok = ((NodeConstantClass *) m_nodeExpr)->getClassValue(bvclass); //t41234
+	    rtnok = m_nodeExpr->getConstantValue(bvclass); //t41234
 	  }
 	else
 	  {
 	    if(m_state.getDefaultClassValue(nuti, bvclass)) //uses scalar uti
 	      {
 		BV8K bvtmpmask;
-		rtnok = ((NodeListClassInit *) m_nodeExpr)->initDataMembersConstantValue(bvclass, bvtmpmask); //at pos 0
+		rtnok = ((NodeListClassInit *) m_nodeExpr)->initDataMembersConstantValue(bvclass, bvtmpmask); //at pos 0, adjusted for elements!
 	      }
 	  }
 
@@ -510,14 +513,14 @@ namespace MFM {
 	BV8K bvel;
 	AssertBool gotVal = m_constSymbol->getInitValue(bvel);
 	assert(gotVal);
-	bvel.CopyBV<8192>(0, pos + ATOMFIRSTSTATEBITPOS, MAXSTATEBITS, bvref); //srcpos, dstpos, len, dest
+	bvel.CopyBV(0, pos, MAXSTATEBITS, bvref); //srcpos, dstpos, len, dest
       }
     else
       {
 	BV8K val8k;
 	AssertBool gotVal = m_constSymbol->getInitValue(val8k);
 	assert(gotVal);
-	val8k.CopyBV<8192>(0, pos, len, bvref);
+	val8k.CopyBV(0, pos, len, bvref);
       }
 
     bvmask.SetBits(pos, len); //t3451, t41232
@@ -525,13 +528,13 @@ namespace MFM {
     return true; //pass on
   } //buildDataMemberConstantValue
 
-  void NodeInitDM::genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos)
+  void NodeInitDM::genCodeDefaultValueOrTmpVarStringRegistrationNumber(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr)
   {
     m_state.abortNotImplementedYet(); //???
     return; //pass on
   }
 
-  void NodeInitDM::genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos)
+  void NodeInitDM::genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr)
   {
     m_state.abortNotImplementedYet(); //???
     return;
@@ -553,7 +556,7 @@ namespace MFM {
     assert(m_constSymbol);
     if(m_constSymbol->isInitValueReady())
       return NORMAL;
-    return ERROR;
+    return evalErrorReturn();
   }
 
   TBOOL NodeInitDM::packBitsInOrderOfDeclaration(u32& offset)
@@ -631,7 +634,7 @@ namespace MFM {
 	AssertBool isDef = m_state.findSymbolInAClass(m_cid, m_ofClassUTI, asymptr, hazyKin);
 	assert(isDef);
 	pos = asymptr->getPosOffset();
-	m_posOfDM = pos;
+	m_posOfDM = pos; //no adjust for elements here (t41230, t41184)
       }
     else
       {
@@ -677,7 +680,7 @@ namespace MFM {
 	// read its value within its uvpass or useLocalVar (t41176)
 	s32 tmpVarNum4 = m_state.getNextTmpVarNumber();
 
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	fp->write("const ");
 	fp->write(nut->getTmpStorageTypeAsString().c_str());
 	fp->write(" ");
@@ -702,7 +705,7 @@ namespace MFM {
 	//recurse to its NodeListClassInit with an immediate tmp var w default value(s)
 	// (like NodeVarDeclDM) -- in case of Strings.
 	s32 tmpVarNum2 = m_state.getNextTmpVarNumber();
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	fp->write(nut->getLocalStorageTypeAsString().c_str());
 	fp->write(" ");
 	fp->write(m_state.getTmpVarAsString(nuti, tmpVarNum2, cstor).c_str());
@@ -724,13 +727,13 @@ namespace MFM {
 	    ((NodeListArrayInitialization *) m_nodeExpr)->genCodeClassInitArray(fp, uvpass2);
 	  }
 
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	if(useLocalVar)
 	  fp->write(cos->getMangledName().c_str()); //t41171
 	else
 	  fp->write(uvpass.getTmpVarAsString(m_state).c_str()); //tmp class storage
 	fp->write(".");
-	fp->write(nut->writeMethodForCodeGen().c_str()); //e.g. Write, WriteLong, etc
+	fp->write(nut->writeMethodForCodeGen().c_str()); //e.g. Write, WriteLong, etc (t41176)
 	fp->write("(");
 	if(isVarElement)
 	  fp->write("T::ATOM_FIRST_STATE_BIT + "); //t41175
@@ -760,7 +763,7 @@ namespace MFM {
 	assert(m_nodeExpr); //t41206
 	m_nodeExpr->genCode(fp, uvpass3);
 
-	m_state.indent(fp);
+	m_state.indentUlamCode(fp);
 	if(useLocalVar)
 	  fp->write(cos->getMangledName().c_str()); //t41171
 	else
@@ -787,10 +790,10 @@ namespace MFM {
     m_state.abortShouldntGetHere(); //the question!?
   } //genCodeConstantArrayInitialization
 
-  void NodeInitDM::generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly)
+  void NodeInitDM::generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly)
   {
     m_state.abortShouldntGetHere(); //the question!?
-  } //generateBuiltinConstantArrayInitializationFunction
+  } //generateBuiltinConstantClassOrArrayInitializationFunction
 
   void NodeInitDM::cloneAndAppendNode(std::vector<Node *> & cloneVec)
   {

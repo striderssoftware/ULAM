@@ -354,6 +354,22 @@ namespace MFM {
     return !(!m_state.okUTItoContinue(sblockuti) || (UlamType::compare(sblockuti, superuti, m_state) != UTIC_SAME));
   } //isSuperClassLinkReady
 
+  bool NodeBlockClass::hasStringDataMembers()
+  {
+    bool hasStrings = NodeBlockContext::hasStringDataMembers(); //btw, does not check superclasses!!!
+    if(!hasStrings)
+      {
+	UTI superuti = m_state.isClassASubclass(getNodeType());
+	if((superuti != Nouti) && !m_state.isUrSelf(superuti))
+	  {
+	    NodeBlockClass * superblock = getSuperBlockPointer();
+	    if(superblock != NULL)
+	      hasStrings |= superblock->hasStringDataMembers();
+	  }
+      }
+    return hasStrings;
+  } //hasStringsDataMembers
+
   UTI NodeBlockClass::checkAndLabelType()
   {
     //do first, might be important!
@@ -1009,7 +1025,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     return aok;
   } //buildDefaultValueForClassConstantDefs
 
-  void NodeBlockClass::genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos)
+  void NodeBlockClass::genCodeDefaultValueOrTmpVarStringRegistrationNumber(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr)
   {
     ULAMCLASSTYPE classtype = m_state.getUlamTypeByIndex(getNodeType())->getUlamClassType();
     if(classtype == UC_ELEMENT)
@@ -1019,25 +1035,25 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
       {
 	NodeBlockClass * superblock = getSuperBlockPointer();
 	assert(superblock);
-	superblock->genCodeDefaultValueStringRegistrationNumber(fp, startpos);
+	superblock->genCodeDefaultValueOrTmpVarStringRegistrationNumber(fp, startpos, uvpassptr, bv8kptr);
       }
 
     if(m_nodeNext)
-      m_nodeNext->genCodeDefaultValueStringRegistrationNumber(fp, startpos); //side-effect for dm vardecls
+      m_nodeNext->genCodeDefaultValueOrTmpVarStringRegistrationNumber(fp, startpos, uvpassptr, bv8kptr); //side-effect for dm vardecls
   }
 
-  void NodeBlockClass::genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos)
+  void NodeBlockClass::genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr)
   {
     if((m_state.isClassASubclass(getNodeType()) != Nouti))
       {
 	NodeBlockClass * superblock = getSuperBlockPointer();
 	assert(superblock);
-	superblock->genCodeElementTypeIntoDataMemberDefaultValue(fp, startpos);
+	superblock->genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(fp, startpos, uvpassptr);
       }
 
     if(m_nodeNext)
-      m_nodeNext->genCodeElementTypeIntoDataMemberDefaultValue(fp, startpos); //side-effect for dm vardecls
-  } //genCodeElementTypeIntoDataMemberDefaultValue
+      m_nodeNext->genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(fp, startpos, uvpassptr); //side-effect for dm vardecls
+  } //genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar
 
   EvalStatus NodeBlockClass::eval()
   {
@@ -1081,15 +1097,14 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
 	makeRoomForNodeType(funcType); //Int return
 
 	evs = funcNode->eval();
-	if(evs == NORMAL)
-	  {
-	    UlamValue testUV = m_state.m_nodeEvalStack.popArg();
-	    Node::assignReturnValueToStack(testUV);
-	  }
+	if(evs != NORMAL) return evalStatusReturn(evs);
+
+	UlamValue testUV = m_state.m_nodeEvalStack.popArg();
+	Node::assignReturnValueToStack(testUV);
 	setNodeType(saveClassType); //temp, restore
       }
     evalNodeEpilog();
-    return evs;
+    return NORMAL;
   } //eval
 
   //override to check both variables and function names; not any super class.
@@ -1822,7 +1837,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write(namestrlong.c_str());
     fp->write("\", 0))\n");
 
-    genCodeConstantArrayInitialization(fp);
+    //genCodeConstantArrayInitialization(fp);
 
     m_state.indent(fp);
     fp->write("{\n");
@@ -1879,7 +1894,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write(namestrlong.c_str());
     fp->write("\", 0))\n");
 
-    genCodeConstantArrayInitialization(fp);
+    //genCodeConstantArrayInitialization(fp); t41198 constants now static
 
     m_state.indent(fp);
     fp->write("{ }\n\n");
@@ -1921,7 +1936,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write(namestrlong.c_str());
     fp->write("\", 0))\n");
 
-    genCodeConstantArrayInitialization(fp);
+    //genCodeConstantArrayInitialization(fp);
 
     m_state.indent(fp);
     fp->write("{ }\n\n");
@@ -1961,7 +1976,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("() : UlamClass<EC");
     fp->write(">()\n");
 
-    genCodeConstantArrayInitialization(fp);
+    //genCodeConstantArrayInitialization(fp); //t41238
 
     m_state.indent(fp);
     fp->write("{ }\n\n");
@@ -1988,8 +2003,8 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
     fp->write("//BUILT-IN FUNCTIONS:\n");
     fp->write("\n");
 
-    //define built-in init method for any "data member" constant arrays:
-    generateBuiltinConstantArrayInitializationFunction(fp, declOnly);
+    //define built-in init method for any "data member" constant class or arrays:
+    generateBuiltinConstantClassOrArrayInitializationFunction(fp, declOnly);
 
     //generate 3 UlamClass:: methods for smart ulam debugging
     u32 dmcount = 0; //pass ref
@@ -2350,7 +2365,7 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
 	// unlike element and quarks, data members can be elements, atoms and other transients
 	//e.g. t3811, t3812
 	genCodeBuiltInFunctionBuildingDefaultDataMembers(fp);
-	genCodeElementTypeIntoDataMemberDefaultValue(fp, 0); //startpos = 0
+	genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(fp, 0, NULL); //startpos = 0
 
 	m_state.indent(fp);
 	fp->write("bvsref.WriteBV(pos, "); //first arg
@@ -2609,13 +2624,13 @@ void NodeBlockClass::checkCustomArrayTypeFunctions()
       m_nodeNext->genCodeConstantArrayInitialization(fp);
   }
 
-  void NodeBlockClass::generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly)
+  void NodeBlockClass::generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly)
   {
-    if(m_nodeArgumentList)
-      m_nodeArgumentList->generateBuiltinConstantArrayInitializationFunction(fp, declOnly);
+    if(m_nodeArgumentList) //t3894, t41209
+      m_nodeArgumentList->generateBuiltinConstantClassOrArrayInitializationFunction(fp, declOnly);
 
     if(m_nodeNext)
-      m_nodeNext->generateBuiltinConstantArrayInitializationFunction(fp, declOnly);
+      m_nodeNext->generateBuiltinConstantClassOrArrayInitializationFunction(fp, declOnly);
   }
 
   void NodeBlockClass::genCodeBuiltInFunctionGetString(File * fp, bool declOnly)

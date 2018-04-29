@@ -4,16 +4,19 @@
 
 namespace MFM {
 
-  SymbolWithValue::SymbolWithValue(const Token& id, UTI utype, CompilerState & state) : Symbol(id, utype, state), m_isReady(false), m_hasInitVal(false), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(false), m_declnno(0) { }
+  SymbolWithValue::SymbolWithValue(const Token& id, UTI utype, CompilerState & state) : Symbol(id, utype, state), m_isReady(false), m_hasInitVal(false), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(Nouti), m_declnno(0) { }
 
-  SymbolWithValue::SymbolWithValue(const SymbolWithValue & sref) : Symbol(sref), m_isReady(sref.m_isReady), m_hasInitVal(sref.m_hasInitVal), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(sref.m_classArgument || sref.m_classParameter), m_declnno(sref.m_declnno)
+  SymbolWithValue::SymbolWithValue(const SymbolWithValue & sref) : Symbol(sref), m_isReady(sref.m_isReady), m_hasInitVal(sref.m_hasInitVal), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(Nouti), m_declnno(sref.m_declnno)
   {
+    if((sref.m_classArgument != Nouti) || sref.m_classParameter)
+      m_classArgument = m_state.getCompileThisIdx(); //t41229
     //classArg is copying from a classParameter
     m_constantValue = sref.m_constantValue;
     m_initialValue = sref.m_initialValue;
+
   }
 
-  SymbolWithValue::SymbolWithValue(const SymbolWithValue & sref, bool keepType) : Symbol(sref, keepType), m_isReady(sref.m_isReady), m_hasInitVal(sref.m_hasInitVal), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(sref.m_classArgument || sref.m_classParameter), m_declnno(sref.m_declnno)
+  SymbolWithValue::SymbolWithValue(const SymbolWithValue & sref, bool keepType) : Symbol(sref, keepType), m_isReady(sref.m_isReady), m_hasInitVal(sref.m_hasInitVal), m_isReadyInitVal(false), m_classParameter(false), m_classArgument(sref.m_classArgument), m_declnno(sref.m_declnno)
   {
     //classArg is copying from a classParameter
     m_constantValue = sref.m_constantValue;
@@ -36,12 +39,17 @@ namespace MFM {
 
   bool SymbolWithValue::isClassArgument()
   {
+    return (m_classArgument != Nouti);
+  }
+
+  UTI SymbolWithValue::getClassArgumentOfClassInstance()
+  {
     return m_classArgument;
   }
 
-  void SymbolWithValue::setClassArgumentFlag()
+  void SymbolWithValue::setClassArgumentFlag(UTI cuti)
   {
-    m_classArgument = true;
+    m_classArgument = cuti;
   }
 
   u32 SymbolWithValue::getPosOffset()
@@ -58,6 +66,18 @@ namespace MFM {
   {
     return m_isReady; //constant value
   }
+
+  bool SymbolWithValue::getLexValue(std::string& vstr)
+  {
+    if(!isReady())
+      return false;
+
+    u64 constantval = 0;
+    AssertBool gotVal = getValue(constantval);
+    assert(gotVal);
+
+    return convertValueToALexString(constantval, getUlamTypeIdx(), vstr, m_state);
+  } //getLexValue
 
   bool SymbolWithValue::getValue(u32& val)
   {
@@ -231,6 +251,42 @@ namespace MFM {
     return false;
   }
 
+  bool SymbolWithValue::getValueReadyToPrint(u32 & uv)
+  {
+    bool oktoprint = true;
+    if(isReady())
+      getValue(uv);
+    else if(hasInitValue() && isInitValueReady())
+      getInitValue(uv);
+    else
+      oktoprint = false;
+    return oktoprint;
+  } //getValueReadyToPrint (helper)
+
+  bool SymbolWithValue::getValueReadyToPrint(u64 & dv)
+  {
+    bool oktoprint = true;
+    if(isReady())
+      getValue(dv);
+    else if(hasInitValue() && isInitValueReady())
+      getInitValue(dv);
+    else
+      oktoprint = false;
+    return oktoprint;
+  } //getValueReadyToPrint (helper)
+
+  bool SymbolWithValue::getValueReadyToPrint(BV8K & bv)
+  {
+    bool oktoprint = true;
+    if(isReady())
+      getValue(bv);
+    else if(hasInitValue() && isInitValueReady())
+      getInitValue(bv);
+    else
+      oktoprint = false;
+    return oktoprint;
+  } //getValueReadyToPrint (helper)
+
   bool SymbolWithValue::foldConstantExpression()
   {
     return true; //stub
@@ -246,14 +302,8 @@ namespace MFM {
 
   void SymbolWithValue::printPostfixValueScalar(File * fp)
   {
-    bool oktoprint = true;
     u64 val = 0;
-    if(isReady())
-      getValue(val);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(val);
-    else
-      oktoprint = false;
+    bool oktoprint = getValueReadyToPrint(val);
 
     if(oktoprint)
       {
@@ -318,14 +368,8 @@ namespace MFM {
 
   void SymbolWithValue::printPostfixValueArray(File * fp)
   {
-    bool oktoprint = true;
     BV8K dval;
-    if(isReady())
-      getValue(dval);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(dval);
-    else
-      oktoprint = false;
+    bool oktoprint = getValueReadyToPrint(dval);
 
     if(!oktoprint)
       {
@@ -364,15 +408,8 @@ namespace MFM {
 
   void SymbolWithValue::printPostfixValueArrayStringAsComment(File * fp)
   {
-    bool oktoprint = true;
     BV8K dval;
-    if(isReady())
-      getValue(dval);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(dval);
-    else
-      oktoprint = false;
-
+    bool oktoprint = getValueReadyToPrint(dval);
 
     UTI tuti = getUlamTypeIdx();
     UlamType * tut = m_state.getUlamTypeByIndex(tuti);
@@ -415,19 +452,10 @@ namespace MFM {
 
  bool SymbolWithValue::getValueAsHexString(std::string& vstr)
   {
-    bool oktoprint = true;
     BV8K dval;
-    if(isReady())
-      getValue(dval);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(dval);
-    else
-      oktoprint = false;
+    bool oktoprint = getValueReadyToPrint(dval);
 
-    if(!oktoprint)
-      {
-	return false;
-      }
+    if(!oktoprint) return false;
 
     UTI tuti = getUlamTypeIdx();
     UlamType * tut = m_state.getUlamTypeByIndex(tuti);
@@ -462,19 +490,10 @@ namespace MFM {
 
   bool SymbolWithValue::getArrayValueAsString(std::string& vstr)
   {
-    bool oktoprint = true;
     BV8K dval;
-    if(isReady())
-      getValue(dval);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(dval);
-    else
-      oktoprint = false;
+    bool oktoprint = getValueReadyToPrint(dval);
 
-    if(!oktoprint)
-      {
-	return false;
-      }
+    if(!oktoprint) return false;
 
     UTI tuti = getUlamTypeIdx();
     UlamType * tut = m_state.getUlamTypeByIndex(tuti);
@@ -504,22 +523,109 @@ namespace MFM {
 
   bool SymbolWithValue::getScalarValueAsString(std::string& vstr)
   {
-    bool oktoprint = true;
     u64 constantval;
-    if(isReady())
-      getValue(constantval);
-    else if(hasInitValue() && isInitValueReady())
-      getInitValue(constantval);
-    else
-      oktoprint = false;
+    bool oktoprint = getValueReadyToPrint(constantval);
 
-    if(!oktoprint)
-      {
-	return false;
-      }
+    if(!oktoprint) return false;
 
     return SymbolWithValue::convertValueToAPrettyString(constantval, getUlamTypeIdx(), vstr, m_state);
   } //getScalarValueAsString
+
+  //return false if not ready, o.w. true; rtnstr updated
+  // NodeListArrayInitialization::buildClassArrayItemInitialValue
+  // expanded data to fill atom-size per element; left space for MFM
+  // Element Type. Handles scalar and array.
+  bool SymbolWithValue::getClassValueAsHexString(std::string& rtnstr)
+  {
+    BV8K dval;
+    bool oktoprint = getValueReadyToPrint(dval);
+
+    if(!oktoprint) return false;
+
+    u32 totlen = m_state.getUlamTypeByIndex(getUlamTypeIdx())->getSizeofUlamType();
+    SymbolWithValue::getHexValueAsString(totlen, dval, rtnstr);
+    return true;
+  } //getClassValueAsHexString
+
+  //static: return false if all zeros, o.w. true; rtnstr updated
+  bool SymbolWithValue::getLexValueAsString(u32 ntotbits, const BV8K& bval, std::string& rtnstr)
+  {
+    //like the code generated in CS::genCodeClassDefaultConstantArray
+    u32 uvals[ARRAY_LEN8K];
+    bval.ToArray(uvals);
+
+    u32 nwords = (ntotbits + 31)/MAXBITSPERINT;
+
+    //short-circuit if all zeros
+    bool isZero = true;
+    s32 x = nwords - 1;
+    for(; x >= 0; x--)
+      {
+	if(uvals[x] != 0)
+	  {
+	    isZero = false;
+	    break;
+	  }
+      }
+
+    if(isZero)
+      {
+	rtnstr = "10"; //all zeros
+	return false;
+      }
+
+    //compress to output only non-zero uval items (left-justified)
+    nwords = (u32) x + 1;
+
+    std::ostringstream ostream;
+    //output number of non-zero words first
+    ostream << ToLeximitedNumber(nwords);
+
+    for(u32 i = 0; i < nwords; i++)
+      {
+	ostream << ToLeximitedNumber(uvals[i]); //no spaces
+      }
+    rtnstr = ostream.str();
+    return true;
+  } //getLexValueAsString
+
+  //static: return false if all zeros, o.w. true; rtnstr updated
+  bool SymbolWithValue::getHexValueAsString(u32 ntotbits, const BV8K& bval, std::string& rtnstr)
+  {
+    //used for code generated in CS::genCodeClassDefaultConstantArray
+    u32 uvals[ARRAY_LEN8K];
+    bval.ToArray(uvals);
+
+    u32 nwords = (ntotbits + 31)/MAXBITSPERINT;
+
+    //short-circuit if all zeros
+    bool isZero = true;
+    for(u32 x = 0; x < nwords; x++)
+      {
+	if(uvals[x] != 0)
+	  {
+	    isZero = false;
+	    break;
+	  }
+      }
+
+    if(isZero)
+      {
+	rtnstr = "0x0"; //nothing to xodo
+	return false;
+      }
+
+    std::ostringstream ostream;
+    for(u32 i = 0; i < nwords; i++)
+      {
+	if(i > 0)
+	  ostream << ", ";
+
+	ostream << "0x" << std::hex << uvals[i];
+      }
+    rtnstr = ostream.str();
+    return true;
+  } //getHexValueAsString
 
   bool SymbolWithValue::convertValueToAPrettyString(u64 varg, UTI tuti, std::string& vstr, CompilerState & state)
   {
@@ -646,98 +752,6 @@ namespace MFM {
     vstr = ostr.str();
     return true;
   } //convertValueToANonPrettyString (static helper)
-
-  //static: return false if all zeros, o.w. true; rtnstr updated
-  bool SymbolWithValue::getLexValueAsString(u32 ntotbits, const BV8K& bval, std::string& rtnstr)
-  {
-    //like the code generated in CS::genCodeClassDefaultConstantArray
-    u32 uvals[ARRAY_LEN8K];
-    bval.ToArray(uvals);
-
-    u32 nwords = (ntotbits + 31)/MAXBITSPERINT;
-
-    //short-circuit if all zeros
-    bool isZero = true;
-    s32 x = nwords - 1;
-    for(; x >= 0; x--)
-      {
-	if(uvals[x] != 0)
-	  {
-	    isZero = false;
-	    break;
-	  }
-      }
-
-    if(isZero)
-      {
-	rtnstr = "10"; //all zeros
-	return false;
-      }
-
-    //compress to output only non-zero uval items (left-justified)
-    nwords = (u32) x + 1;
-
-    std::ostringstream ostream;
-    //output number of non-zero words first
-    ostream << ToLeximitedNumber(nwords);
-
-    for(u32 i = 0; i < nwords; i++)
-      {
-	ostream << ToLeximitedNumber(uvals[i]); //no spaces
-      }
-    rtnstr = ostream.str();
-    return true;
-  } //getLexValueAsString
-
-  //static: return false if all zeros, o.w. true; rtnstr updated
-  bool SymbolWithValue::getHexValueAsString(u32 ntotbits, const BV8K& bval, std::string& rtnstr)
-  {
-    //used for code generated in CS::genCodeClassDefaultConstantArray
-    u32 uvals[ARRAY_LEN8K];
-    bval.ToArray(uvals);
-
-    u32 nwords = (ntotbits + 31)/MAXBITSPERINT;
-
-    //short-circuit if all zeros
-    bool isZero = true;
-    for(u32 x = 0; x < nwords; x++)
-      {
-	if(uvals[x] != 0)
-	  {
-	    isZero = false;
-	    break;
-	  }
-      }
-
-    if(isZero)
-      {
-	rtnstr = "0x0"; //nothing to xodo
-	return false;
-      }
-
-    std::ostringstream ostream;
-    for(u32 i = 0; i < nwords; i++)
-      {
-	if(i > 0)
-	  ostream << ", ";
-
-	ostream << "0x" << std::hex << uvals[i];
-      }
-    rtnstr = ostream.str();
-    return true;
-  } //getHexValueAsString
-
-  bool SymbolWithValue::getLexValue(std::string& vstr)
-  {
-    if(!isReady())
-      return false;
-
-    u64 constantval = 0;
-    AssertBool gotVal = getValue(constantval);
-    assert(gotVal);
-
-    return convertValueToALexString(constantval, getUlamTypeIdx(), vstr, m_state);
-  } //getLexValue
 
   bool SymbolWithValue::convertValueToALexString(u64 varg, UTI tuti, std::string& vstr, CompilerState & state)
   {

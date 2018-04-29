@@ -85,7 +85,7 @@ namespace MFM{
 
     virtual bool assignClassArgValueInStubCopy();
 
-    bool getClassValue(BV8K& bvtmp);
+    virtual bool getConstantValue(BV8K& bval);
 
     virtual bool initDataMembersConstantValue(BV8K& bvref, BV8K& bvmask);
 
@@ -120,7 +120,9 @@ namespace MFM{
 
     UlamValue makeUlamValuePtr();
     void makeUVPassForCodeGen(UVPass& uvpass);
+    void setupStackWithClassForEval();
 
+    bool getClassValue(BV8K& bvtmp);
   };
 
 }

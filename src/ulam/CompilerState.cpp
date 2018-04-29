@@ -577,6 +577,16 @@ namespace MFM {
     return rtnb;
   } //isOtherClassInThisContext
 
+  bool CompilerState::isAStringDataMemberInClass(UTI cuti)
+  {
+    SymbolClass * csym = NULL;
+    AssertBool isDefined = alreadyDefinedSymbolClass(cuti, csym);
+    assert(isDefined);
+    NodeBlockClass * classblock = csym->getClassBlockNode();
+    assert(classblock);
+    return classblock->hasStringDataMembers();
+  } //isAStringDataMemberInClass
+
   bool CompilerState::isDefined(UlamKeyTypeSignature key, UlamType *& foundUT)
   {
     bool rtnBool= false;
@@ -785,7 +795,6 @@ namespace MFM {
        return true; //anonymous UTI
 
     //or this? (works for template instances too)
-    //if(statusUnknownTypeInThisClassResolver(auti))
     if(statusUnknownTypeInAClassResolver(cuti, auti))
     {
       mappedUTI = auti; //auti no longer a holder
@@ -1030,6 +1039,8 @@ namespace MFM {
       return getLocalsFilescopeTheInstanceMangledNameByIndex(esuti);
 
     assert(esut->getUlamTypeEnum() == Class);
+    assert(!isClassAStub(esuti)); //t41223
+
     std::ostringstream esmangled;
     esmangled << esut->getUlamTypeMangledName().c_str();
     esmangled << "<EC>::THE_INSTANCE";
@@ -1221,10 +1232,6 @@ namespace MFM {
     UlamKeyTypeSignature keyOfArg = ut->getUlamKeyTypeSignature();
     UTI cuti = keyOfArg.getUlamKeyTypeSignatureClassInstanceIdx(); // what-if a ref?
 
-    //if(bUT == Class)
-    //  return cuti; //try this Mon May  2 10:36:56 2016
-    //does cuti == utiArg if bUT is a Class?
-
     s32 bitsize = keyOfArg.getUlamKeyTypeSignatureBitSize();
     u32 nameid = keyOfArg.getUlamKeyTypeSignatureNameId();
     UlamKeyTypeSignature baseKey(nameid, bitsize, UNKNOWNSIZE, cuti, ALT_NOT);
@@ -1250,7 +1257,7 @@ namespace MFM {
     if((bUT == Class) && ut->isScalar())
       return classidx; //scalar
 
-    UlamKeyTypeSignature baseKey(keyOfArg.m_typeNameId, bitsize, arraysize, classidx, ALT_NOT);  //default array size is zero
+    UlamKeyTypeSignature baseKey(keyOfArg.m_typeNameId, bitsize, arraysize, classidx, ALT_NOT);    //default array size is zero
     ULAMCLASSTYPE classtype = ut->getUlamClassType();
     UTI buti = makeUlamType(baseKey, bUT, classtype); //could be a new one, oops.
     if(ut->isCustomArray())
@@ -1491,8 +1498,8 @@ namespace MFM {
 	//static variable 'myRegNum' efficiency not worth it. Tue Jan 16 17:47:22 2018
 	//class data members may have strings (t3948)
 	indent(fp);
-	fp->write("//correct runtime regnum for strings\n");
-	getCurrentBlock()->genCodeDefaultValueStringRegistrationNumber(fp, 0);
+	fp->write("//correct runtime regnum for strings; data member inits\n");
+	getCurrentBlock()->genCodeDefaultValueOrTmpVarStringRegistrationNumber(fp, 0, NULL, NULL);
       }
 
     m_currentIndentLevel--;
@@ -2045,6 +2052,27 @@ namespace MFM {
     return rtnb; //even for non-classes
   } //isClassASubclassOf
 
+  //return true if a superclass of the first arg starts with id.
+  // i.e. cuti is a subclass of superp. recurses the family tree.
+  bool CompilerState::findClassAncestorWithMatchingNameid(UTI cuti, u32 nameid, UTI& superp)
+  {
+    bool rtnb = false;
+    UTI prevuti = getUlamTypeAsDeref(cuti); //init for the loop
+    while(!rtnb && (prevuti != Nouti))
+      {
+	cuti = prevuti;
+	if(getUlamTypeByIndex(cuti)->getUlamTypeNameId() == nameid)
+	  {
+	    superp = cuti;
+	    rtnb = true;
+	    break;
+	  }
+	else
+	  prevuti = isClassASubclass(cuti);// ends w UrSelf who has no superclass
+      } //end while
+    return rtnb;
+  } //findClassAncestorWithMatchingNameid
+
   bool CompilerState::isClassAStub(UTI cuti)
   {
     SymbolClass * csym = NULL;
@@ -2453,7 +2481,6 @@ namespace MFM {
     UTI newstubcopyuti = makeUlamType(newstubkey, Class, superclasstype); //**gets next unknown uti type
 
     SymbolClass * superstubcopy = superctsym->copyAStubClassInstance(superuti, newstubcopyuti, argvaluecontext, argtypecontext, stubloc); //t3365. t41221
-    //superctsym->copyAStubClassInstance(superuti, newstubcopyuti, supercsym->getContextForPendingArgValues(), supercsym->getContextForPendingArgTypes(), supercsym->getLoc()); //t3365. t41221
     superctsym->mergeClassInstancesFromTEMP(); //not mid-iteration!!
 
     if(superstubcopy && !superstubcopy->pendingClassArgumentsForClassInstance())
@@ -3084,7 +3111,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   const std::string & CompilerState::getDataAsFormattedUserString(u32 combinedidx)
   {
-    UTI cuti = (combinedidx >> REGNUMBITS);
+    UTI cuti = (combinedidx >> STRINGIDXBITS);
     u32 sidx = (combinedidx & STRINGIDXMASK);
     assert(cuti > 0 && sidx > 0); // error/t3987
     StringPoolUser& classupool = getUPoolRefForClass(cuti);
@@ -3093,7 +3120,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   const std::string & CompilerState::getDataAsUnFormattedUserString(u32 combinedidx)
   {
-    UTI cuti = (combinedidx >> REGNUMBITS);
+    UTI cuti = (combinedidx >> STRINGIDXBITS);
     u32 sidx = (combinedidx & STRINGIDXMASK);
     assert(cuti > 0 && sidx > 0); // t3959
     StringPoolUser& classupool = getUPoolRefForClass(cuti);
@@ -3102,7 +3129,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   bool CompilerState::isValidUserStringIndex(u32 combinedidx)
   {
-    UTI cuti = (combinedidx >> REGNUMBITS);
+    UTI cuti = (combinedidx >> STRINGIDXBITS);
     u32 sidx = (combinedidx & STRINGIDXMASK);
     if(cuti == 0 || sidx == 0)
       return false;
@@ -3112,7 +3139,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   u32 CompilerState::getUserStringLength(u32 combinedidx)
   {
-    UTI cuti = (combinedidx >> REGNUMBITS);
+    UTI cuti = (combinedidx >> STRINGIDXBITS);
     u32 sidx = (combinedidx & STRINGIDXMASK);
     assert(cuti > 0 && sidx > 0);
     StringPoolUser& classupool = getUPoolRefForClass(cuti);
@@ -3168,7 +3195,6 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
     if(m_currentFunctionReturnNodes.empty())
       {
-	//if((it != Void) && !fsym->isNativeFunctionDeclaration() && (!fsym->isVirtualFunction() || !fsym->isPureVirtualFunction()))
 	if((it != Void) && !fsym->isNativeFunctionDeclaration() && (!fsym->isVirtualFunction() || !fsym->isPureVirtualFunction()) && !fsym->isConstructorFunction())
 	  {
 	    std::ostringstream msg;
@@ -3487,6 +3513,11 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
     return m_pool.getIndexForDataString(f.str());
   }
 
+  const std::string CompilerState::getStringMangledName()
+  {
+    return getUlamTypeByIndex(String)->getLocalStorageTypeAsString();
+  }
+
   const char * CompilerState::getMangledNameForUserStringPool()
   {
     return USERSTRINGPOOL_MANGLEDNAME;
@@ -3525,7 +3556,6 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 	SymbolClass * csym = NULL;
 	if(alreadyDefinedSymbolClass(uti, csym))
 	  {
-	    //lenstr << csym->getMangledNameForParameterType();
 	    lenstr << csym->getMangledName(); //t41141
 
 	    if(classtype == UC_QUARK)
@@ -3796,7 +3826,7 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
 
   UlamValue CompilerState::getByteOfUserStringForEval(u32 usrStr, u32 offsetInt)
   {
-    UTI cuti = (usrStr >> REGNUMBITS);
+    UTI cuti = (usrStr >> STRINGIDXBITS);
     u32 sidx = (usrStr & STRINGIDXMASK);
     assert((cuti > 0) && (sidx > 0));
     StringPoolUser& classupool = getUPoolRefForClass(cuti);
@@ -4165,6 +4195,17 @@ bool CompilerState::isFuncIdInAClassScope(UTI cuti, u32 dataindex, Symbol * & sy
       }
     return labelname.str();
   } //getParserSymbolTypeFlagAsString
+
+  void CompilerState::saveIdentTokenForPendingConditionalAs(const Token& iTok)
+  {
+    m_identTokenForConditionalAs = iTok;
+  }
+
+  void CompilerState::confirmParsingConditionalAs(const Token& cTok)
+  {
+    m_parsingConditionalToken = cTok;
+    m_parsingConditionalAs = true; //cleared manually
+  }
 
   void CompilerState::saveIdentTokenForConditionalAs(const Token& iTok, const Token& cTok)
   {

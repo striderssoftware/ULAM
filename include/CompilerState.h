@@ -192,6 +192,7 @@ namespace MFM{
     void addCompleteUlamTypeToThisContextSet(UTI uti);
     void addCompleteUlamTypeToContextBlockSet(UTI uti, NodeBlockContext * contextblock);
     bool isOtherClassInThisContext(UTI suti);
+    bool isAStringDataMemberInClass(UTI cuti);
     bool isDefined(UlamKeyTypeSignature key, UlamType *& foundUT);
     bool anyDefinedUTI(UlamKeyTypeSignature key, UTI& foundUTI);
     UlamType * createUlamType(UlamKeyTypeSignature key, ULAMTYPE utype, ULAMCLASSTYPE classtype);
@@ -274,6 +275,7 @@ namespace MFM{
     s32 slotsNeeded(UTI uti);
     bool isClassATemplate(UTI cuti);
     UTI isClassASubclass(UTI cuti); //returns super UTI, or Nav if no inheritance
+    bool findClassAncestorWithMatchingNameid(UTI cuti, u32 nameid, UTI& superp);
     void resetClassSuperclass(UTI cuti, UTI superuti);
     bool isClassASubclassOf(UTI cuti, UTI superp);
     bool isClassAStub(UTI cuti);
@@ -410,6 +412,7 @@ namespace MFM{
     u32 getMangledClassNameIdForUlamLocalsFilescope(UTI locuti);
     u32 getClassNameIdForUlamLocalsFilescope(UTI locuti);
 
+    const std::string getStringMangledName();
     const char * getMangledNameForUserStringPool();
     const char * getDefineNameForUserStringPoolSize();
 
@@ -481,6 +484,8 @@ namespace MFM{
 
     /** for conditional h/as-magic */
     void saveIdentTokenForConditionalAs(const Token& iTok, const Token& cTok);
+    void saveIdentTokenForPendingConditionalAs(const Token& iTok);
+    void confirmParsingConditionalAs(const Token& cTok);
 
     /** class or model parameter structured comment for MFM */
     void saveStructuredCommentToken(const Token& scTok);

@@ -2,6 +2,7 @@
 #include "NodeConstant.h"
 #include "NodeConstantArray.h"
 #include "NodeConstantClass.h"
+#include "NodeConstantClassArray.h"
 #include "NodeIdent.h"
 #include "CompilerState.h"
 #include "NodeBlockClass.h"
@@ -247,7 +248,12 @@ namespace MFM {
 		// same node no, and loc (e.g. t3573)
 		Node * newnode = NULL;
 		if(m_state.isAClass(auti))
-		  newnode = new NodeConstantClass(m_token, (SymbolWithValue *) asymptr, NULL, m_state);
+		  {
+		    if(m_state.isScalar(auti))
+		      newnode = new NodeConstantClass(m_token, (SymbolWithValue *) asymptr, NULL, m_state);
+		    else
+		      newnode = new NodeConstantClassArray(m_token, (SymbolWithValue *) asymptr, NULL, m_state); //t41261
+		  }
 		else if(m_state.isScalar(auti))
 		  newnode = new NodeConstant(m_token, (SymbolWithValue *) asymptr, NULL, m_state);
 		else
@@ -319,7 +325,12 @@ namespace MFM {
 	// same node no, and loc (e.g. t3573, t3526)
 	Node * newnode = NULL;
 	if(m_state.isAClass(vuti))
-	  newnode = new NodeConstantClass(m_token, (SymbolWithValue *) m_varSymbol, NULL, m_state);
+	  {
+	    if(m_state.isScalar(vuti))
+	      newnode = new NodeConstantClass(m_token, (SymbolWithValue *) m_varSymbol, NULL, m_state);
+	    else
+	      newnode = new NodeConstantClassArray(m_token, (SymbolWithValue *) m_varSymbol, NULL, m_state);
+	  }
 	else if(m_state.isScalar(vuti))
 	  newnode = new NodeConstant(m_token, (SymbolWithValue *) m_varSymbol, NULL, m_state);
 	else
@@ -456,16 +467,14 @@ namespace MFM {
     assert(m_varSymbol);
 
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     UlamType * nut = m_state.getUlamTypeByIndex(nuti);
     ULAMCLASSTYPE classtype = nut->getUlamClassType();
     if((classtype == UC_TRANSIENT) && (nut->getTotalBitSize() > MAXSTATEBITS))
-      return UNEVALUABLE;
+      return evalStatusReturnNoEpilog(UNEVALUABLE);
 
     evalNodeProlog(0); //new current frame pointer
 
@@ -560,18 +569,16 @@ namespace MFM {
   EvalStatus NodeIdent::evalToStoreInto()
   {
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     assert(m_varSymbol);
 
     UlamType * nut = m_state.getUlamTypeByIndex(nuti);
     ULAMCLASSTYPE classtype = nut->getUlamClassType();
     if((classtype == UC_TRANSIENT) && (nut->getTotalBitSize() > MAXSTATEBITS))
-      return UNEVALUABLE;
+      return evalStatusReturnNoEpilog(UNEVALUABLE);
 
     TBOOL stor = Node::getStoreIntoAble();
 
@@ -589,10 +596,10 @@ namespace MFM {
 	    if(stor == TBOOL_HAZY)
 	      {
 		MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), DEBUG);
-		return NOTREADY;
+		return evalStatusReturnNoEpilog(NOTREADY);
 	      }
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    return ERROR;
+	    return evalErrorReturn();
 	  }
 	//else continue if a constant function parameter; how a DM? (t41239)
       }
@@ -944,6 +951,10 @@ namespace MFM {
       {
 	// support class types for constants (t41198)
 	uti = args.m_classInstanceIdx;
+	if(args.m_arraysize != NONARRAYSIZE) //t41261 support constant class arrays
+	  {
+	    uti = m_state.getUlamTypeAsArrayOfScalar(uti);
+	  }
 	brtn = true;
       }
 

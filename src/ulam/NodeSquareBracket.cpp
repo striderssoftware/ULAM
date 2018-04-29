@@ -219,7 +219,7 @@ namespace MFM {
 			return Nav;
 		      }
 		  }
-	      }
+	      } //right index is a constant
 	  }
 
 	//set up idxuti..RHS
@@ -344,7 +344,6 @@ namespace MFM {
 	else
 	  {
 	    newType = m_state.getUlamTypeAsScalar(leftType);
-
 	    // multi-dimensional possible; MP not ok lhs.
 	    Node::setStoreIntoAble(m_nodeLeft->getStoreIntoAble());
 	  }
@@ -365,6 +364,34 @@ namespace MFM {
 
     return newType;
   } //checkAndLabelType
+
+  bool NodeSquareBracket::getConstantArrayItemValue(BV8K& bvitem)
+  {
+    bool rtnok = false;
+    assert(m_nodeLeft->isAConstant() && m_nodeRight->isAConstant());
+    UTI leftType = m_nodeLeft->getNodeType();
+    s32 rindex;
+    UTI rt;
+    if(getArraysizeInBracket(rindex,rt)) //t41198
+      {
+	assert((rindex >= 0) && (rindex < m_state.getArraySize(leftType))); //catchable during c&l
+	//fold into a constant class (t41273); not a list
+	BV8K bvccatmp;
+	if(m_nodeLeft->getConstantValue(bvccatmp))
+	  {
+	    UTI scalarLeft = m_state.getUlamTypeAsScalar(leftType);
+	    u32 itemlen = m_state.getUlamTypeByIndex(scalarLeft)->getSizeofUlamType();
+	    bvccatmp.CopyBV(rindex * itemlen, 0u, itemlen, bvitem); //src pos, dest pos, dst bv
+	    rtnok = true;
+	  }
+      }
+    return rtnok;
+  } //getConstantArrayItemValue
+
+  bool NodeSquareBracket::getConstantValue(BV8K& bval)
+  {
+    return getConstantArrayItemValue(bval);
+  }
 
   //here, we check for existence, do we can default to custom array, aref.
   Node * NodeSquareBracket::buildOperatorOverloadFuncCallNode()
@@ -471,11 +498,9 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     UTI leftType = m_nodeLeft->getNodeType();
     UlamType * lut = m_state.getUlamTypeByIndex(leftType);
@@ -488,22 +513,14 @@ namespace MFM {
 
     makeRoomForSlots(1); //always 1 slot for ptr
     EvalStatus evs = m_nodeLeft->evalToStoreInto();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue pluv = m_state.m_nodeEvalStack.popArg();
     UTI ltype = pluv.getPtrTargetType();
 
     makeRoomForNodeType(m_nodeRight->getNodeType()); //offset a constant expression
     evs = m_nodeRight->eval();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue offset = m_state.m_nodeEvalStack.popArg();
     UlamType * offut = m_state.getUlamTypeByIndex(offset.getUlamValueTypeIdx());
@@ -537,8 +554,7 @@ namespace MFM {
 	    msg << "Array subscript [" << offsetInt << "] exceeds the size (" << arraysize;
 	    msg << ") of array '" << m_state.m_pool.getDataAsString(lid).c_str() << "'";
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    evalNodeEpilog();
-	    return ERROR;
+	    return evalStatusReturn(ERROR);
 	  }
       }
     else
@@ -553,11 +569,11 @@ namespace MFM {
 	msg << m_state.m_pool.getDataAsString(lid).c_str();
 	msg << "' requires a numeric type";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	evalNodeEpilog();
-	return ERROR;
+	return evalStatusReturn(ERROR);
       }
 
     Node::assignReturnValueToStack(pluv.getValAt(offsetInt, m_state));
+
     evalNodeEpilog();
     return NORMAL;
   } //eval
@@ -568,30 +584,18 @@ namespace MFM {
 
     makeRoomForSlots(1); //always 1 slot for index into user string pool
     EvalStatus evs = m_nodeLeft->eval();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue luv = m_state.m_nodeEvalStack.popArg();
     u32 usrStr = 0;
     usrStr = luv.getImmediateData(m_state);
 
     if(!m_state.isValidUserStringIndex(usrStr))
-      {
-	//uninitialized or out-of-bounds
-	evalNodeEpilog();
-	return ERROR;
-      }
+      return evalStatusReturn(ERROR); //uninitialized or out-of-bounds
 
     makeRoomForNodeType(m_nodeRight->getNodeType()); //offset a constant expression
     evs = m_nodeRight->eval();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue offset = m_state.m_nodeEvalStack.popArg();
     UlamType * offut = m_state.getUlamTypeByIndex(offset.getUlamValueTypeIdx());
@@ -604,8 +608,7 @@ namespace MFM {
 	    msg << "Uninitialized String cannot access subscript of '";
 	    msg << m_state.getDataAsFormattedUserString(usrStr).c_str() << "'";
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    evalNodeEpilog();
-	    return ERROR;
+	    return evalStatusReturn(ERROR);
 	  }
 
 	// constant expression only required for array declaration
@@ -618,8 +621,7 @@ namespace MFM {
 	    msg << "String subscript [" << offsetdata << "] exceeds the length (" << strlen;
 	    msg << ") of '" << m_state.getDataAsFormattedUserString(usrStr).c_str() << "'";
 	    MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	    evalNodeEpilog();
-	    return ERROR;
+	    return evalStatusReturn(ERROR);
 	  }
       }
     else
@@ -629,11 +631,11 @@ namespace MFM {
 	msg << m_state.getDataAsFormattedUserString(usrStr).c_str();
 	msg << "' requires a numeric type";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	evalNodeEpilog();
-	return ERROR;
+	return evalStatusReturn(ERROR);
       }
 
     Node::assignReturnValueToStack(m_state.getByteOfUserStringForEval(usrStr, offsetdata));
+
     evalNodeEpilog();
     return NORMAL;
   } //evalAUserStringByte
@@ -642,32 +644,22 @@ namespace MFM {
   {
     assert(m_nodeLeft && m_nodeRight);
     UTI nuti = getNodeType();
-    if(nuti == Nav)
-      return ERROR;
+    if(nuti == Nav) return evalErrorReturn();
 
-    if(nuti == Hzy)
-      return NOTREADY;
+    if(nuti == Hzy) return evalStatusReturnNoEpilog(NOTREADY);
 
     evalNodeProlog(0); //new current frame pointer
 
     makeRoomForSlots(1); //always 1 slot for ptr
     EvalStatus evs = m_nodeLeft->evalToStoreInto();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue pluv = m_state.m_nodeEvalStack.popArg();
     UTI auti = pluv.getPtrTargetType();
 
     makeRoomForNodeType(m_nodeRight->getNodeType()); //offset a constant expression
     evs = m_nodeRight->eval();
-    if(evs != NORMAL)
-      {
-	evalNodeEpilog();
-	return evs;
-      }
+    if(evs != NORMAL) return evalStatusReturn(evs);
 
     UlamValue offset = m_state.m_nodeEvalStack.popArg();
     // constant expression only required for array declaration
@@ -692,11 +684,11 @@ namespace MFM {
 	msg << ") of array '" << m_state.m_pool.getDataAsString(lid).c_str() << "'";
 	msg << " to store into";
 	MSG(getNodeLocationAsString().c_str(), msg.str().c_str(), ERR);
-	evs = ERROR;
+	return evalStatusReturn(ERROR);
       }
 
     evalNodeEpilog();
-    return evs;
+    return NORMAL;
   } //evalToStoreInto
 
   bool NodeSquareBracket::doBinaryOperation(s32 lslot, s32 rslot, u32 slots)
@@ -817,9 +809,7 @@ namespace MFM {
 	return true;
       }
 
-    //    sizetype = m_nodeRight->getNodeType(); //checkAndLabelType(); was c&l??? t3504
-    //if(!m_state.okUTItoContinue(sizetype))
-      sizetype = m_nodeRight->checkAndLabelType();
+    sizetype = m_nodeRight->checkAndLabelType(); //t3504
     if((sizetype == Nav))
       {
 	rtnArraySize = UNKNOWNSIZE;
@@ -896,6 +886,9 @@ namespace MFM {
       }
     else if(Node::isCurrentObjectsContainingAConstantClass() >= 0)
       {
+#if 0
+	//efficiency, for constant indexes of arrays in constant classes
+	// doesn't help much with fixing Element Types or Strings!!
 	if(m_nodeRight->isAConstant())
 	  {
 	    s32 rindex;
@@ -909,24 +902,22 @@ namespace MFM {
 		uvpass = luvpass;
 	      }
 	    else
-	      {
-		//error, msg? UNKNOWN?
-		m_state.abortShouldntGetHere();
-	      }
+	      m_state.abortShouldntGetHere(); //error, msg? UNKNOWN?
 	  }
 	else
+#endif
 	  {
 	    genCodeToStoreInto(fp, uvpass); //t41198
 	    m_state.clearCurrentObjSymbolsForCodeGen();
 	  }
 	return;
       }
-    //else
+    //else continue..
 
     genCodeToStoreInto(fp, uvpass);
 
-    if(!isString || m_state.isReference(uvpass.getPassTargetType())) //t3953,t3973, not isAltRefType t3908
-      Node::genCodeReadIntoATmpVar(fp, uvpass); //splits on array item
+    if(!(isString || m_nodeLeft->isAConstant()) || m_state.isReference(uvpass.getPassTargetType())) //t3953,t3973, not isAltRefType t3908, nor constant class (t41266)
+      Node::genCodeReadIntoATmpVar(fp, uvpass);
     else
       m_state.clearCurrentObjSymbolsForCodeGen();
   } //genCode
@@ -967,61 +958,38 @@ namespace MFM {
     //save autoref into a tmpvar symbol
     assert(!m_state.m_currentObjSymbolsForCodeGen.empty());
     Symbol * cossym = m_state.m_currentObjSymbolsForCodeGen.back();
+    UTI cossuti = cossym->getUlamTypeIdx();
+    UlamType * cossut = m_state.getUlamTypeByIndex(cossuti);
+    assert(!cossut->isScalar());
 
-    assert(!m_state.isScalar(cossym->getUlamTypeIdx()));
     if(Node::isCurrentObjectsContainingAConstantClass() >= 0)
       {
 	Node::genCodeReadArrayItemFromAConstantClassIntoATmpVar(fp, luvpass, offset);
 	uvpass = luvpass;
-	return; //no tmpvarsymbol?
+	if(m_state.isAClass(cossuti))
+	  Node::genCodeConvertATmpVarIntoBitVector(fp, uvpass); //not for t41198, for t41263
+	else if(cossut->getUlamTypeEnum() == String) //t41274, t41267, t41273
+	  uvpass.setPassTargetType(m_state.getUlamTypeAsDeref(luvpass.getPassTargetType()));
+	m_tmpvarSymbol = Node::makeTmpVarSymbolForCodeGen(uvpass, NULL); //dm to avoid leaks
+	m_tmpvarSymbol->setDivinedByConstantClass();
+	m_state.m_currentObjSymbolsForCodeGen.push_back(m_tmpvarSymbol);
+	return; //t41261
       }
 
+    //luvpass becomes the (BV) autoref, and clears stack
     if(cossym->isConstant())
       {
-	//luvpass becomes the autoref, and clears stack
+	//a constant array of strings is treated like a NodeTerminal DBLQUOTED token.
+	// in order to "fix" the registration number of the index, at use, rather
+	// than at compiler/constructor time when the registration number is not yet
+	// available. (t3953, t41277,8)
 	Node::genCodeConvertATmpVarIntoConstantAutoRef(fp, luvpass, offset);
-
-	UTI leftType = m_nodeLeft->getNodeType();
-	UlamType * lut = m_state.getUlamTypeByIndex(leftType);
-	if((lut->getUlamTypeEnum() == String))
-	  {
-	    //a constant array of strings is treated like a NodeTerminal DBLQUOTED token.
-	    // in order to "fix" the registration number of the index, at use, rather
-	    // than at constructor time when the registration number is not yet available. (t3953)
-	    s32 tmpVarNum = m_state.getNextTmpVarNumber();
-
-	    BV8K tmpbv8k;
-	    AssertBool gotValue = ((SymbolWithValue *) cossym)->getValue(tmpbv8k);
-	    assert(gotValue);
-
-	    UTI cuti = tmpbv8k.Read(0, 16u);
-	    assert(cuti > 0);
-
-	    const std::string stringmangledName = m_state.getUlamTypeByIndex(String)->getLocalStorageTypeAsString();
-	    //get string 2-part index in a tmp var; TODO as TMPAUTOREF???
-	    // update constant's reg num from UTI (t3953)
-	    m_state.indentUlamCode(fp);
-	    fp->write("const ");
-	    fp->write(lut->getArrayItemTmpStorageTypeAsString().c_str()); //u32
-	    fp->write(" ");
-	    fp->write(m_state.getTmpVarAsString(String, tmpVarNum, TMPREGISTER).c_str());
-	    fp->write(" = ");
-	    fp->write(stringmangledName.c_str());
-	    fp->write("::makeCombinedIdx(");
-	    fp->write(m_state.getTheInstanceMangledNameByIndex(cuti).c_str());
-	    fp->write(".GetRegistrationNumber(), ");
-	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
-	    fp->write(".getStringIndex());"); GCNL;
-
-	    luvpass = UVPass::makePass(tmpVarNum, TMPREGISTER, String, m_state.determinePackable(String), m_state, 0, cossym->getId()); //replace luvpass
-	  }
       }
     else
-      Node::genCodeConvertATmpVarIntoAutoRef(fp, luvpass, offset); //luvpass becomes the autoref, and clears stack
+      Node::genCodeConvertATmpVarIntoAutoRef(fp, luvpass, offset);
 
     uvpass = luvpass;
     m_tmpvarSymbol = Node::makeTmpVarSymbolForCodeGen(uvpass, cossym); //dm to avoid leaks
-    ///////m_state.m_currentObjSymbolsForCodeGen = saveCOSVector; //restore the prior stack(t41170)
     m_state.m_currentObjSymbolsForCodeGen.push_back(m_tmpvarSymbol);
     // NO RESTORE -- up to caller for lhs.
   } //genCodeToStoreInto
@@ -1061,17 +1029,16 @@ namespace MFM {
       }
     else
       {
-	const std::string stringmangledName = m_state.getUlamTypeByIndex(String)->getLocalStorageTypeAsString();
 	if(!Node::isCurrentObjectALocalVariableOrArgument())
 	  {
 	    fp->write(" = uc.GetUlamClassRegistry().GetUlamClassByIndex(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getRegNum(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write("))->");
 	    fp->write(m_state.getClassGetStringFunctionName(m_state.getCompileThisIdx()));
 	    fp->write("Length(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getStrIdx(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write("));"); GCNL;
@@ -1093,7 +1060,7 @@ namespace MFM {
 	    fp->write("))->");
 	    fp->write(m_state.getClassGetStringFunctionName(m_state.getCompileThisIdx()));
 	    fp->write("Length(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getStrIdx(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write("));"); GCNL;
@@ -1133,18 +1100,16 @@ namespace MFM {
       }
     else
       {
-	const std::string stringmangledName = m_state.getUlamTypeByIndex(String)->getLocalStorageTypeAsString();
-
 	if(!Node::isCurrentObjectALocalVariableOrArgument())
 	  {
 	    fp->write(" = *(uc.GetUlamClassRegistry().GetUlamClassByIndex(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getRegNum(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write("))->");
 	    fp->write(m_state.getClassGetStringFunctionName(m_state.getCompileThisIdx()));
 	    fp->write("(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getStrIdx(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write(")) + ");
@@ -1169,7 +1134,7 @@ namespace MFM {
 	    fp->write("))->");
 	    fp->write(m_state.getClassGetStringFunctionName(m_state.getCompileThisIdx()));
 	    fp->write("(");
-	    fp->write(stringmangledName.c_str());
+	    fp->write(m_state.getStringMangledName().c_str());
 	    fp->write("::getStrIdx(");
 	    fp->write(luvpass.getTmpVarAsString(m_state).c_str());
 	    fp->write(")) + ");

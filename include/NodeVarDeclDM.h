@@ -81,9 +81,9 @@ namespace MFM{
 
     virtual bool buildDefaultValueForClassConstantDefs();
 
-    virtual void genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos);
+    virtual void genCodeDefaultValueOrTmpVarStringRegistrationNumber(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr);
 
-    virtual void genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos);
+    virtual void genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr);
 
     virtual void setInitExpr(Node * node); //was setConstantExpr
 
@@ -103,7 +103,7 @@ namespace MFM{
 
     virtual void genCodeConstantArrayInitialization(File * fp);
 
-    virtual void generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly);
+    virtual void generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly);
 
     virtual void generateTestInstance(File * fp, bool runtest);
 

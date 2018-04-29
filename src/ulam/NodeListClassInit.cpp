@@ -203,7 +203,7 @@ namespace MFM{
     //save before wipe out with each init dm; for local vars (o.w. empty)
     std::vector<Symbol *> saveCOSVector = m_state.m_currentObjSymbolsForCodeGen;
 
-    m_state.indent(fp);
+    m_state.indentUlamCode(fp);
     fp->write("{\n");
 
     m_state.m_currentIndentLevel++;
@@ -216,7 +216,7 @@ namespace MFM{
 
     m_state.m_currentIndentLevel--;
 
-    m_state.indent(fp);
+    m_state.indentUlamCode(fp);
     fp->write("}\n");
   }
 
@@ -236,14 +236,14 @@ namespace MFM{
     m_state.abortShouldntGetHere();
   }
 
-  void NodeListClassInit::generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly)
+  void NodeListClassInit::generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly)
   {
     m_state.abortShouldntGetHere();
   }
 
   bool NodeListClassInit::initDataMembersConstantValue(BV8K& bvref, BV8K& bvmask)
   {
-    //bvref contains default value at pos 0 of our m_forClassUTI.
+    //bvref contains default value at pos 0 (adjusted for elements!) of our m_forClassUTI.
     bool rtnok = true;
     for(u32 i = 0; i < m_nodes.size(); i++)
       {

@@ -297,12 +297,12 @@ namespace MFM {
     return true; //pass on
   }
 
-  void NodeTypedef::genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos)
+  void NodeTypedef::genCodeDefaultValueOrTmpVarStringRegistrationNumber(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr)
   {
     return; //pass on
   }
 
-  void NodeTypedef::genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos)
+  void NodeTypedef::genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr)
   {
     return;
   }
@@ -342,7 +342,7 @@ namespace MFM {
   void NodeTypedef::genCodeConstantArrayInitialization(File * fp)
   {}
 
-  void NodeTypedef::generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly)
+  void NodeTypedef::generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly)
   {}
 
   void NodeTypedef::cloneAndAppendNode(std::vector<Node *> & cloneVec)
