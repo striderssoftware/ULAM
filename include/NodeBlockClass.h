@@ -97,6 +97,8 @@ namespace MFM{
 
     bool isSuperClassLinkReady(UTI cuti);
 
+    virtual bool hasStringDataMembers();
+
     virtual UTI checkAndLabelType();
 
     bool checkParameterNodeTypes();
@@ -131,9 +133,11 @@ namespace MFM{
 
     virtual bool buildDefaultValue(u32 wlen, BV8K& dvref); //starts here, called by SymbolClass
 
-    virtual void genCodeDefaultValueStringRegistrationNumber(File * fp, u32 startpos);
+    virtual bool buildDefaultValueForClassConstantDefs();
 
-    virtual void genCodeElementTypeIntoDataMemberDefaultValue(File * fp, u32 startpos);
+    virtual void genCodeDefaultValue(File * fp, u32 startpos, const UVPass * const uvpassptr, const BV8K * const bv8kptr);
+
+    virtual void genCodeElementTypeIntoDataMemberDefaultValueOrTmpVar(File * fp, u32 startpos, const UVPass * const uvpassptr);
 
     u32 checkDuplicateFunctions();
 
@@ -168,7 +172,7 @@ namespace MFM{
 
     void updatePrevBlockPtrOfFuncSymbolsInTable();
 
-    void packBitsForVariableDataMembers();
+    TBOOL packBitsForVariableDataMembers();
 
     virtual void printUnresolvedVariableDataMembers();
 
@@ -190,11 +194,7 @@ namespace MFM{
 
     virtual void genCodeConstantArrayInitialization(File * fp);
 
-    virtual void generateBuiltinConstantArrayInitializationFunction(File * fp, bool declOnly);
-
-    void genCodeBuiltInFunctionGetString(File * fp, bool declOnly);
-
-    void genCodeBuiltInFunctionGetStringLength(File * fp, bool declOnly);
+    virtual void generateBuiltinConstantClassOrArrayInitializationFunction(File * fp, bool declOnly);
 
     void initElementDefaultsForEval(UlamValue& uv, UTI cuti);
 
@@ -217,6 +217,8 @@ namespace MFM{
 
     NodeBlockClass * m_superBlockNode;
 
+    bool m_buildingDefaultValueInProgress;
+    bool m_bitPackingInProgress;
     bool m_isEmpty; //replaces separate node
     bool m_registeredForTestInstance;
 
@@ -247,6 +249,7 @@ namespace MFM{
     void genCodeBuiltInFunctionIsRelatedInstance(File * fp);
 
     void genCodeBuiltInFunctionGetClassLength(File * fp, bool declOnly, ULAMCLASSTYPE classtype);
+    void genCodeBuiltInFunctionGetClassRegistrationNumber(File * fp, bool declOnly, ULAMCLASSTYPE classtype);
     void genCodeBuiltInFunctionBuildDefaultAtom(File * fp, bool declOnly, ULAMCLASSTYPE classtype);
     bool genCodeBuiltInFunctionBuildingDefaultDataMembers(File * fp);
     void genCodeBuiltInFunctionBuildDefaultQuark(File * fp, bool declOnly, ULAMCLASSTYPE classtype);
