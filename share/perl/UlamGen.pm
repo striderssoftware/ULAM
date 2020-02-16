@@ -176,6 +176,30 @@ sub normalizeClassKeys {
     }
 
     ###
+    # 'audio' key analysis
+
+    my $default = "0x00000000";
+    if (!defined $keys{'audio'}) {
+        $keys{'audio'} = $default;
+    } else {
+        my $audio = $keys{'audio'};
+        if ($audio =~ /^(dynamic|function)$/i) {
+            print STDERR "Audio keyword '$audio' no longer accepted; using default ($default)\n";
+            $audio = $default;
+        } elsif ($audio =~ /^(0x|#)([0-9a-fA-F]{8})$/) {
+            $audio = "0x$2";
+        } elsif  ($audio =~ /^(0x|#)([0-9a-fA-F]{6})$/) {
+            $audio = "0xff$2";  # add alpha
+        } elsif  ($audio =~ /^(0x|#)([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/) {
+            $audio = "0xff$2$2$3$3$4$4"; # expand 12 bit audio
+        } else {
+            print STDERR "Unrecognized audio '$audio', replaced with default ($default)\n";
+            $audio = $default;
+        }
+        $keys{'audio'} = $audio;
+    }
+    
+    ###
     # 'symbol' key analysis
 
     my $symbol = "";
@@ -405,6 +429,10 @@ EOF
     my $body = "";
     $body .= "return $color;";
 
+    my $audio = $classKeys{'audio'};
+    my $audioBody = "";
+    $audioBody .= "return $audio;";
+    
     my @syms = split(/,/,$classKeys{'symmetries'});
     my $csyc = scalar(@syms);
     my $symbody = "";
@@ -466,6 +494,7 @@ namespace MFM {
     const u32 GetVersion() const { return $cver; }
 $movfunc
     const u32 GetElementColor() const { $body }
+    const u32 GetElementAudio() const { $audioBody }
     const u32 GetEventWindowBoundary() const { return $radius + 1; }
     const u32 GetSymmetry(const UlamContext<EC>& uc) const {
       $symbody
