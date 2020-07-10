@@ -140,8 +140,7 @@ namespace MFM {
 
   TMPSTORAGE UlamTypePrimitive::getTmpStorageTypeForTmpVar()
   {
-    //immediate storage is TMPBITVAL for all UlamTypes.
-    return UlamType::getTmpStorageTypeForTmpVar(); //TMPREGISTER
+    return UlamType::getTmpStorageTypeForTmpVar();
   }
 
   const std::string UlamTypePrimitive::castMethodForCodeGen(UTI nodetype)
@@ -437,6 +436,13 @@ namespace MFM {
     fp->write("\n");
 
     m_state.m_currentIndentLevel++;
+
+    //forward declation of immediate ref (before struct)
+    m_state.indent(fp);
+    fp->write("template<class EC> class ");
+    fp->write(automangledName.c_str());
+    fp->write("; //forward"); GCNL;
+    fp->write("\n");
 
     m_state.indent(fp);
     fp->write("template<class EC>\n");

@@ -12,6 +12,11 @@ namespace MFM {
     clear(); //default type is Nouti == 0
   }
 
+  UlamValue::UlamValue(const UlamValue & uv)
+  {
+    memcpy(this, &uv, sizeof(UlamValue)); //explicit copy ctr needed for c++11
+  }
+
   UlamValue::~UlamValue()
   {
     //do not do this automatically; up to Symbol
@@ -354,6 +359,13 @@ namespace MFM {
     return pos;
   } //getPtrPos
 
+  void UlamValue::setPtrLen(s32 len)
+  {
+    assert(isPtr());
+    assert(len >= 0 && len <= BITSPERATOM); //up to caller to fix negative le
+    m_uv.m_ptrValue.m_bitlenInAtom = len;
+  }
+
   s32 UlamValue::getPtrLen()
   {
     assert(isPtr());
@@ -498,6 +510,7 @@ namespace MFM {
     else
       {
 	assert(p.isTargetPacked() == PACKED);
+
 	// base [0] is furthest from the end
 	UlamValue nextPtr = UlamValue::makeScalarPtr(p,state);
 	s32 itemlen = nextPtr.getPtrLen();
