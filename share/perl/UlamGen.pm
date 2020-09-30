@@ -191,7 +191,7 @@ sub normalizeClassKeys {
         } elsif  ($audio =~ /^(0x|#)([0-9a-fA-F]{6})$/) {
             $audio = "0xff$2";  # add alpha
         } elsif  ($audio =~ /^(0x|#)([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/) {
-            $audio = "0xff$2$2$3$3$4$4"; # expand 12 bit audio
+            $audio = "0x00000$2$3$4"; 
         } else {
             print STDERR "Unrecognized audio '$audio', replaced with default ($default)\n";
             $audio = $default;
